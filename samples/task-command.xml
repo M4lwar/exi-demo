@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uci:TaskCommand
+    xmlns:uci="https://www.vdl.afrl.af.mil/programs/oam"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://www.vdl.afrl.af.mil/programs/oam schemas/UCI_MessageDefinitions_v2_5_0.xsd">
+  <uci:SecurityInformation>
+    <uci:Classification>U</uci:Classification>
+    <uci:OwnerProducer>
+      <uci:GovernmentIdentifier>USA</uci:GovernmentIdentifier>
+    </uci:OwnerProducer>
+  </uci:SecurityInformation>
+  <uci:MessageHeader>
+    <uci:SystemID>
+      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+    </uci:SystemID>
+    <uci:Timestamp>2026-07-01T12:00:00Z</uci:Timestamp>
+    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:Mode>EXERCISE</uci:Mode>
+  </uci:MessageHeader>
+  <uci:MessageData>
+    <uci:Command>
+      <uci:Capability>
+        <uci:CommandID>
+          <uci:UUID>aaaa1111-bbbb-2222-cccc-333344445555</uci:UUID>
+        </uci:CommandID>
+        <uci:CommandState>NEW</uci:CommandState>
+        <uci:CapabilityID>
+          <uci:UUID>bbbb2222-cccc-3333-dddd-444455556666</uci:UUID>
+        </uci:CapabilityID>
+        <uci:Ranking>
+          <uci:Rank>
+            <uci:Priority>100</uci:Priority>
+          </uci:Rank>
+        </uci:Ranking>
+        <uci:TaskID>
+          <uci:UUID>33334444-5555-6666-7777-888899990000</uci:UUID>
+        </uci:TaskID>
+      </uci:Capability>
+    </uci:Command>
+  </uci:MessageData>
+</uci:TaskCommand>

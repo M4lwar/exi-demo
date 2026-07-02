@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  EXIFICIENT_VERSION: "0.3.0-rc"
+
+jobs:
+  linux:
+    name: build-linux-${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Conan
+        run: pip install "conan>=2.0"
+      - name: Restore exificient package from release
+        run: |
+          curl -fsSL -o exi.tgz \
+            "https://github.com/M4lwar/exificient-native-image/releases/download/v${EXIFICIENT_VERSION}/conan-exificient-${EXIFICIENT_VERSION}-linux-${{ matrix.arch }}.tgz"
+          conan profile detect --force
+          conan cache restore exi.tgz
+      - name: Build
+        run: |
+          conan install .
+          cmake -S . -B build/Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/generators/conan_toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/Release
+      - name: Run
+        run: |
+          source build/Release/generators/conanrun.sh
+          ./build/Release/exi-demo -h
+          ./build/Release/exi-demo samples/
+
+  windows:
+    name: build-windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Conan
+        run: pip install "conan>=2.0"
+      - name: Restore exificient package from release
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/M4lwar/exificient-native-image/releases/download/v$env:EXIFICIENT_VERSION/conan-exificient-$env:EXIFICIENT_VERSION-windows-x86_64.tgz" -OutFile exi.tgz
+          conan profile detect --force
+          conan cache restore exi.tgz
+      - name: Build
+        shell: pwsh
+        run: |
+          conan install .
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build\generators\conan_toolchain.cmake
+          cmake --build build --config Release
+      - name: Run
+        shell: cmd
+        run: |
+          call build\generators\conanrun.bat
+          build\Release\exi-demo.exe -h || exit /b 1
+          build\Release\exi-demo.exe samples\ || exit /b 1

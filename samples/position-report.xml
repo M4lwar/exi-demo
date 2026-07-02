@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uci:PositionReport
+    xmlns:uci="https://www.vdl.afrl.af.mil/programs/oam"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://www.vdl.afrl.af.mil/programs/oam schemas/UCI_MessageDefinitions_v2_5_0.xsd">
+
+  <!-- MessageType base fields -->
+  <uci:SecurityInformation>
+    <uci:Classification>U</uci:Classification>
+    <uci:OwnerProducer>
+      <uci:GovernmentIdentifier>USA</uci:GovernmentIdentifier>
+    </uci:OwnerProducer>
+  </uci:SecurityInformation>
+
+  <uci:MessageHeader>
+    <uci:SystemID>
+      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+      <uci:DescriptiveLabel>Sender System</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:Timestamp>2026-06-27T12:00:00Z</uci:Timestamp>
+    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:Mode>EXERCISE</uci:Mode>
+  </uci:MessageHeader>
+
+  <!-- PositionReportMDT fields -->
+  <uci:MessageData>
+    <uci:SystemID>
+      <uci:UUID>b2c3d4e5-f6a7-8901-bcde-f12345678901</uci:UUID>
+      <uci:DescriptiveLabel>Reporting Platform</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:DisplayName>UAV-ALPHA-01</uci:DisplayName>
+    <uci:Source>ACTUAL</uci:Source>
+    <uci:CurrentOperatingDomain>AIR</uci:CurrentOperatingDomain>
+
+    <uci:InertialState>
+      <!-- Position in WGS-84: lat/lon in radians, altitude in meters -->
+      <!-- 38.9072° N, 77.0369° W (Washington DC area) -->
+      <uci:Position>
+        <uci:Latitude>0.679042</uci:Latitude>
+        <uci:Longitude>-1.344350</uci:Longitude>
+        <uci:Altitude>304.8</uci:Altitude>
+        <uci:Timestamp>2026-06-27T12:00:00Z</uci:Timestamp>
+      </uci:Position>
+    </uci:InertialState>
+
+    <uci:Timestamp>2026-06-27T12:00:00Z</uci:Timestamp>
+  </uci:MessageData>
+
+</uci:PositionReport>
