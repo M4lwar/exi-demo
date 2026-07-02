@@ -54,7 +54,9 @@ MSVC is a multi-config generator, so the toolchain lands in `build\generators\`
 
 ```bat
 conan install .
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build\generators\conan_toolchain.cmake
+:: CMAKE_TOOLCHAIN_FILE must be an absolute path — a relative one is resolved
+:: against the build dir, not the current directory, and won't be found.
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=%CD%\build\generators\conan_toolchain.cmake
 cmake --build build --config Release
 ```
 

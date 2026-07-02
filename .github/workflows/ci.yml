@@ -67,7 +67,10 @@ jobs:
         shell: pwsh
         run: |
           conan install .
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=build\generators\conan_toolchain.cmake
+          # CMAKE_TOOLCHAIN_FILE must be ABSOLUTE — a relative path is resolved
+          # against the build dir, not CWD.
+          $tc = (Get-ChildItem -Recurse -Filter conan_toolchain.cmake build | Select-Object -First 1).FullName
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$tc"
           cmake --build build --config Release
       - name: Run
         shell: cmd
