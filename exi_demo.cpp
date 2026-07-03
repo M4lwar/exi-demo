@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -168,9 +169,51 @@ static int cmd_peek(graal_isolatethread_t* thread, const std::string& path) {
     return ok > 0 ? 0 : 1;
 }
 
-// ------------------------------------------------------- stubs (T4-T6) -----
+// ---------------------------------------------------------------- headers ----
 
-static int cmd_headers(graal_isolatethread_t*, const std::string&){ fprintf(stderr, "headers: not implemented\n");return 3; }
+static void hexdump16(const char* label, const char* p, size_t n) {
+    printf("  %-14s", label);
+    for (size_t i = 0; i < 16 && i < n; ++i) printf(" %02x", (unsigned char)p[i]);
+    printf("   |");
+    for (size_t i = 0; i < 16 && i < n; ++i) printf("%c", isprint((unsigned char)p[i]) ? p[i] : '.');
+    printf("|\n");
+}
+
+// Shows the wire-format difference EXI_HEADER_COOKIE makes: the 4-byte "$EXI"
+// magic that lets a bus reader identify EXI payloads by sniffing.
+static int cmd_headers(graal_isolatethread_t* thread, const std::string& path) {
+    std::vector<std::string> messages = collect_messages(path);
+    if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); return 1; }
+    std::vector<char> xml = read_file(messages.front());
+    if (xml.empty()) { fprintf(stderr, "Error: unreadable %s\n", messages.front().c_str()); return 1; }
+
+    exi_ctx plain = make_ctx(thread, g_schema, 0);
+    exi_ctx cookie = make_ctx(thread, g_schema, EXI_HEADER_COOKIE);
+
+    char* e1 = nullptr; size_t n1 = 0;
+    char* e2 = nullptr; size_t n2 = 0;
+    if (exi_encode(thread, plain, xml.data(), xml.size(), &e1, &n1) != EXI_OK ||
+        exi_encode(thread, cookie, xml.data(), xml.size(), &e2, &n2) != EXI_OK)
+        die(thread, "encode failed");
+
+    printf("\n  message: %s (%zu bytes XML)\n\n", messages.front().c_str(), xml.size());
+    hexdump16("default:", e1, n1);
+    hexdump16("with cookie:", e2, n2);
+    printf("\n  cookie stream starts with \"$EXI\": %s;  size cost: %zu bytes (%zu -> %zu)\n",
+           (n2 >= 4 && memcmp(e2, "$EXI", 4) == 0) ? "yes" : "NO (?)", n2 - n1, n1, n2);
+
+    // both decode with the same context: the decoder skips the cookie itself
+    char* out = nullptr; size_t out_len = 0;
+    printf("  cookie stream decodes via plain ctx: %s\n\n",
+           exi_decode(thread, plain, e2, n2, &out, &out_len) == EXI_OK ? "yes" : "no");
+    if (out) exi_free(thread, out);
+    exi_free(thread, e1); exi_free(thread, e2);
+    exi_destroy(thread, plain); exi_destroy(thread, cookie);
+    return 0;
+}
+
+// ------------------------------------------------------- stubs (T5-T6) -----
+
 static int cmd_errors(graal_isolatethread_t*)                     { fprintf(stderr, "errors: not implemented\n"); return 3; }
 static int cmd_threads(graal_isolatethread_t*, int, long)         { fprintf(stderr, "threads: not implemented\n");return 3; }
 
