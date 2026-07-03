@@ -1,0 +1,11 @@
+#!/bin/sh
+# Build/run helper: executes the given shell command inside the Linux build
+# container (the exificient package ships Linux/Windows binaries only, so
+# macOS hosts build and run the demo in a container). The named volumes cache
+# the Conan cache and apt/pip work across invocations.
+exec podman run --rm -v "$PWD":/w -w /w -v exi-demo-conan:/root/.conan2 \
+    docker.io/library/python:3.12-bookworm bash -c "
+set -e
+apt-get update -qq && apt-get install -y -qq --no-install-recommends g++ cmake >/dev/null
+pip -q install 'conan>=2.0'
+$*"

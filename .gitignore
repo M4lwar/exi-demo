@@ -3,3 +3,5 @@ CMakeUserPresets.json
 __pycache__/
 *.tgz
 schemas-copy/
+conan-exificient-*.tgz
+build/
