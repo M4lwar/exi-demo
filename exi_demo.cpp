@@ -270,9 +270,50 @@ static int cmd_errors(graal_isolatethread_t* thread) {
     return 0;
 }
 
-// ------------------------------------------------------- stub (T6) -----
+// ---------------------------------------------------------------- threads ----
 
-static int cmd_threads(graal_isolatethread_t*, int, long)         { fprintf(stderr, "threads: not implemented\n");return 3; }
+// Demonstrates the documented thread-safety contract: one context, many
+// attached threads, byte-identical results, near-linear encode throughput.
+static int cmd_threads(graal_isolate_t* isolate, graal_isolatethread_t* thread,
+                       int nthreads, long iterations) {
+    if (iterations < 50) iterations = 50;
+    std::vector<char> xml = read_file("samples/position-report.xml");
+    if (xml.empty()) { fprintf(stderr, "Error: samples/position-report.xml unreadable\n"); return 1; }
+    exi_ctx ctx = make_ctx(thread, g_schema, 0);
+
+    char* ref = nullptr; size_t ref_len = 0;
+    if (exi_encode(thread, ctx, xml.data(), xml.size(), &ref, &ref_len) != EXI_OK)
+        die(thread, "reference encode failed");
+    const std::string reference(ref, ref_len);
+    exi_free(thread, ref);
+
+    std::atomic<long> done{0}, mismatches{0}, failures{0};
+    const auto t0 = clk::now();
+    std::vector<std::thread> workers;
+    for (int t = 0; t < nthreads; ++t) {
+        workers.emplace_back([&] {
+            graal_isolatethread_t* wt = nullptr;
+            if (graal_attach_thread(isolate, &wt) != 0) { ++failures; return; }
+            for (long i = 0; i < iterations; ++i) {
+                char* e = nullptr; size_t el = 0;
+                if (exi_encode(wt, ctx, xml.data(), xml.size(), &e, &el) != EXI_OK) { ++failures; continue; }
+                if (std::string(e, el) != reference) ++mismatches;
+                exi_free(wt, e);
+                ++done;
+            }
+            graal_detach_thread(wt);
+        });
+    }
+    for (auto& w : workers) w.join();
+    const double secs = ms_since(t0) / 1000.0;
+
+    printf("\n  %d thread(s) x %ld iterations on ONE shared exi_ctx\n", nthreads, iterations);
+    printf("  encodes:    %ld ok, %ld failed, %ld byte-mismatches\n",
+           done.load(), failures.load(), mismatches.load());
+    printf("  throughput: %.0f encodes/s (%.3f s total)\n\n", done / secs, secs);
+    exi_destroy(thread, ctx);
+    return (failures == 0 && mismatches == 0) ? 0 : 1;
+}
 
 // ----------------------------------------------------------------- main ----
 
@@ -321,7 +362,7 @@ int main(int argc, char** argv) {
     else if (sub == "peek")    rc = cmd_peek(thread, path);
     else if (sub == "headers") rc = cmd_headers(thread, path);
     else if (sub == "errors")  rc = cmd_errors(thread);
-    else if (sub == "threads") rc = cmd_threads(thread, nthreads, iterations);
+    else if (sub == "threads") rc = cmd_threads(isolate, thread, nthreads, iterations);
     else { fprintf(stderr, "Error: unknown subcommand '%s'\n\n", sub.c_str()); usage(argv[0]); rc = 2; }
 
     graal_tear_down_isolate(thread);
