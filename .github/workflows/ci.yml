@@ -28,15 +28,15 @@ jobs:
           python-version: "3.12"
       - name: Install Conan
         run: pip install "conan>=2.0"
-      - name: Restore exificient package from release
+      - name: Restore exificient packages (baked uci-2.5.0 + generic fallback)
         run: |
-          curl -fsSL -o exi.tgz \
-            "https://github.com/M4lwar/exificient-native-image/releases/download/v${EXIFICIENT_VERSION}/conan-exificient-${EXIFICIENT_VERSION}-linux-${{ matrix.arch }}.tgz"
+          curl -fsSL -o exi-baked.tgz \
+            "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.0-uci-2.5.0/conan-exificient-1.0.0+uci-2.5.0-linux-${{ matrix.arch }}.tgz"
           conan profile detect --force
-          conan cache restore exi.tgz
+          conan cache restore exi-baked.tgz
       - name: Build
         run: |
-          conan install .
+          conan install . -o "exificient/*:baked_schema=uci-2.5.0"
           cmake -S . -B build/Release \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/generators/conan_toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release
@@ -45,6 +45,7 @@ jobs:
         run: |
           source build/Release/generators/conanrun.sh
           ./build/Release/exi-demo -h
+          ./build/Release/exi-demo create-cost
           ./build/Release/exi-demo bench samples/
           ./build/Release/exi-demo peek samples/
           ./build/Release/exi-demo headers samples/position-report.xml
@@ -81,6 +82,7 @@ jobs:
         run: |
           call build\generators\conanrun.bat
           build\Release\exi-demo.exe -h || exit /b 1
+          build\Release\exi-demo.exe create-cost || exit /b 1
           build\Release\exi-demo.exe bench samples\ || exit /b 1
           build\Release\exi-demo.exe peek samples\ || exit /b 1
           build\Release\exi-demo.exe headers samples\position-report.xml || exit /b 1

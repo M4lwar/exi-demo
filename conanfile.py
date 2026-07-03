@@ -10,6 +10,11 @@ class ExiDemoConan(ConanFile):
 
         conan install .
         conan build .
+
+    A schema-baked build of the same package/version is selected per-install
+    with the `baked_schema` option (no recipe pin change needed):
+
+        conan install . -o "exificient/*:baked_schema=uci-2.5.0"
     """
 
     settings = "os", "arch", "compiler", "build_type"
