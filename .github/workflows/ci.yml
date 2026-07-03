@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  EXIFICIENT_VERSION: "0.3.0-rc"
+  EXIFICIENT_VERSION: "1.0.0"
 
 jobs:
   linux:
@@ -45,7 +45,11 @@ jobs:
         run: |
           source build/Release/generators/conanrun.sh
           ./build/Release/exi-demo -h
-          ./build/Release/exi-demo samples/
+          ./build/Release/exi-demo bench samples/
+          ./build/Release/exi-demo peek samples/
+          ./build/Release/exi-demo headers samples/position-report.xml
+          ./build/Release/exi-demo errors
+          ./build/Release/exi-demo threads -t 4 -n 100
 
   windows:
     name: build-windows-x86_64
@@ -77,4 +81,8 @@ jobs:
         run: |
           call build\generators\conanrun.bat
           build\Release\exi-demo.exe -h || exit /b 1
-          build\Release\exi-demo.exe samples\ || exit /b 1
+          build\Release\exi-demo.exe bench samples\ || exit /b 1
+          build\Release\exi-demo.exe peek samples\ || exit /b 1
+          build\Release\exi-demo.exe headers samples\position-report.xml || exit /b 1
+          build\Release\exi-demo.exe errors || exit /b 1
+          build\Release\exi-demo.exe threads -t 4 -n 100 || exit /b 1
