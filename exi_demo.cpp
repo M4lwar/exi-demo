@@ -212,9 +212,66 @@ static int cmd_headers(graal_isolatethread_t* thread, const std::string& path) {
     return 0;
 }
 
-// ------------------------------------------------------- stubs (T5-T6) -----
+// ---------------------------------------------------------------- errors ----
 
-static int cmd_errors(graal_isolatethread_t*)                     { fprintf(stderr, "errors: not implemented\n"); return 3; }
+static const char* status_name(exi_status s) {
+    switch (s) {
+        case EXI_OK: return "EXI_OK";
+        case EXI_ERR_INVALID_ARG: return "EXI_ERR_INVALID_ARG";
+        case EXI_ERR_SCHEMA_LOAD: return "EXI_ERR_SCHEMA_LOAD";
+        case EXI_ERR_INVALID_CONTEXT: return "EXI_ERR_INVALID_CONTEXT";
+        case EXI_ERR_MALFORMED_XML: return "EXI_ERR_MALFORMED_XML";
+        case EXI_ERR_MALFORMED_EXI: return "EXI_ERR_MALFORMED_EXI";
+        case EXI_ERR_BUFFER_TOO_SMALL: return "EXI_ERR_BUFFER_TOO_SMALL";
+        case EXI_ERR_INTERNAL: return "EXI_ERR_INTERNAL";
+    }
+    return "?";
+}
+
+static void show(graal_isolatethread_t* thread, const char* what, exi_status s) {
+    char err[256] = {0};
+    exi_last_error(thread, err, sizeof err);
+    printf("  %-38s -> %-26s %s\n", what, status_name(s), s == EXI_OK ? "" : err);
+}
+
+// Walks the failure modes a bus consumer meets in practice and shows how each
+// is reported: a distinct status code plus a per-thread diagnostic message.
+static int cmd_errors(graal_isolatethread_t* thread) {
+    printf("\n");
+    exi_ctx ctx = nullptr;
+    show(thread, "create(missing schema xsd)",
+         exi_create(thread, "no/such/schema.xsd", 0, &ctx));
+    show(thread, "create(unknown flag bit 5)",
+         exi_create(thread, g_schema, 1u << 5, &ctx));
+
+    ctx = make_ctx(thread, g_schema, 0);
+    char* out = nullptr; size_t out_len = 0;
+    show(thread, "encode(\"this is not xml\")",
+         exi_encode(thread, ctx, "this is not xml", 15, &out, &out_len));
+    show(thread, "decode(garbage bytes)",
+         exi_decode(thread, ctx, "\x7f\x00!DU", 5, &out, &out_len));
+    char tiny[3]; size_t need = 0;
+    // valid EXI, but a 3-byte name buffer: BUFFER_TOO_SMALL reports the need
+    std::vector<char> xml = read_file("samples/position-report.xml");
+    char* exi = nullptr; size_t exi_len = 0;
+    if (!xml.empty() && exi_encode(thread, ctx, xml.data(), xml.size(), &exi, &exi_len) == EXI_OK) {
+        exi_status s = exi_peek_root(thread, ctx, exi, exi_len, tiny, sizeof tiny, &need);
+        char what[64];
+        snprintf(what, sizeof what, "peek(name_cap=3) [needs %zu]", need);
+        show(thread, what, s);
+        exi_free(thread, exi);
+    }
+    show(thread, "decode(NULL ctx)",
+         exi_decode(thread, nullptr, "\x00", 1, &out, &out_len));
+    exi_destroy(thread, ctx);
+    show(thread, "encode(destroyed ctx)",
+         exi_encode(thread, ctx, "x", 1, &out, &out_len));
+    printf("\n  every failure: a status code now, a message via exi_last_error(thread,...).\n\n");
+    return 0;
+}
+
+// ------------------------------------------------------- stub (T6) -----
+
 static int cmd_threads(graal_isolatethread_t*, int, long)         { fprintf(stderr, "threads: not implemented\n");return 3; }
 
 // ----------------------------------------------------------------- main ----
