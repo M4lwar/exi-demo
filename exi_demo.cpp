@@ -1,60 +1,35 @@
-// exi-demo.cpp
+// exi-demo: capability showcase for libexificient's v2 C API.
 //
-// Schema-informed EXI compression demo for libexificient (the GraalVM-native
-// build of EXIficient).
+//   exi-demo bench   [-s schema] [-n iters] [path]   compression ratio + timing
+//   exi-demo peek    [-s schema] [path]              message-type dispatch demo
+//   exi-demo headers [-s schema] [file.xml]          $EXI cookie on the wire
+//   exi-demo errors  [-s schema]                     status codes + exi_last_error
+//   exi-demo threads [-s schema] [-t N] [-n iters]   shared-context concurrency
 //
-// Point it at a single .xml file or a directory of captured messages (searched
-// recursively for *.xml). It loads the schema once (exi_init), then for each
-// message encodes to EXI, decodes back to verify the round-trip, and reports the
-// compression ratio. With --iterations N it encodes/decodes each message N times
-// and reports timing, showing the cost is the one-time exi_init while each
-// encode/decode is cheap.
-//
-// Run `exi-demo -h` for usage. The schema passed via --schema (and any schema it
-// imports) must exist on disk.
+// path: an .xml file or a directory searched recursively (default: samples/).
+// The schema (default ./schemas/UCI_MessageDefinitions_v2_5_0.xsd) and any
+// schemas it imports must exist on disk; the library bundles none.
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <thread>
 #include <vector>
 
-#include "libexificient.h"
+#include "exificient.h"
 
 namespace fs = std::filesystem;
 using clk = std::chrono::steady_clock;
 
-static const char* DEFAULT_PATH   = "EntityReport.xml";
-static const char* DEFAULT_SCHEMA = "./schemas/UCI_MessageDefinitions_v2_5_0.xsd";
+static const char* g_schema = "./schemas/UCI_MessageDefinitions_v2_5_0.xsd";
 
 static double ms_since(clk::time_point t0) {
     return std::chrono::duration<double, std::milli>(clk::now() - t0).count();
-}
-
-static void usage(const char* prog) {
-    printf(
-        "exi-demo - schema-informed EXI compression demo for libexificient\n"
-        "\n"
-        "Encodes UCI XML message(s) to EXI and reports the compression ratio; also\n"
-        "decodes back to verify the round-trip. With --iterations it times exi_init\n"
-        "versus the per-message exi_encode/exi_decode.\n"
-        "\n"
-        "Usage: %s [options] [path]\n"
-        "\n"
-        "  path                   An .xml file, or a directory searched recursively\n"
-        "                         for *.xml files (default: %s)\n"
-        "\n"
-        "Options:\n"
-        "  -s, --schema <path>    XSD schema passed to exi_init; this file and any\n"
-        "                         schemas it imports must exist on disk\n"
-        "                         (default: %s)\n"
-        "  -n, --iterations <N>   Encode+decode each message N times and report\n"
-        "                         min/avg/max timing (default: 1)\n"
-        "  -h, --help             Show this help and exit\n",
-        prog, DEFAULT_PATH, DEFAULT_SCHEMA);
 }
 
 static std::vector<char> read_file(const std::string& path) {
@@ -69,15 +44,13 @@ static std::vector<char> read_file(const std::string& path) {
     return buf;
 }
 
-// Collect the .xml files to process: recurse if `path` is a directory.
 static std::vector<std::string> collect_messages(const std::string& path) {
     std::vector<std::string> files;
     std::error_code ec;
     if (fs::is_directory(path, ec)) {
-        for (const auto& e : fs::recursive_directory_iterator(path, ec)) {
+        for (const auto& e : fs::recursive_directory_iterator(path, ec))
             if (e.is_regular_file(ec) && e.path().extension() == ".xml")
                 files.push_back(e.path().string());
-        }
         std::sort(files.begin(), files.end());
     } else {
         files.push_back(path);
@@ -85,132 +58,129 @@ static std::vector<std::string> collect_messages(const std::string& path) {
     return files;
 }
 
-int main(int argc, char** argv) {
-    std::string input_path = DEFAULT_PATH;
-    const char* schema_path = DEFAULT_SCHEMA;
-    long iterations = 1;
-    bool path_set = false;
+static void die(graal_isolatethread_t* thread, const char* what) {
+    char err[512] = {0};
+    if (thread) exi_last_error(thread, err, sizeof err);
+    fprintf(stderr, "Error: %s%s%s\n", what, err[0] ? ": " : "", err);
+    exit(1);
+}
 
-    for (int i = 1; i < argc; ++i) {
-        const char* a = argv[i];
-        if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
-            usage(argv[0]);
-            return 0;
-        }
-        if (a[0] != '-') {                    // positional path
-            input_path = a;
-            path_set = true;
-            continue;
-        }
-        bool wants_value = !strcmp(a, "-s") || !strcmp(a, "--schema") ||
-                           !strcmp(a, "-n") || !strcmp(a, "--iterations");
-        if (!wants_value) {
-            fprintf(stderr, "Error: unknown argument '%s'\n\n", a);
-            usage(argv[0]);
-            return 2;
-        }
-        if (i + 1 >= argc) {
-            fprintf(stderr, "Error: %s requires a value\n\n", a);
-            usage(argv[0]);
-            return 2;
-        }
-        const char* value = argv[++i];
-        if (!strcmp(a, "-s") || !strcmp(a, "--schema")) {
-            schema_path = value;
-        } else {  // -n / --iterations
-            iterations = strtol(value, nullptr, 10);
-            if (iterations < 1) {
-                fprintf(stderr, "Error: --iterations must be >= 1\n");
-                return 2;
-            }
-        }
-    }
-    (void)path_set;
+static exi_ctx make_ctx(graal_isolatethread_t* thread, const char* schema, uint32_t flags) {
+    exi_ctx ctx = nullptr;
+    if (exi_create(thread, schema, flags, &ctx) != EXI_OK)
+        die(thread, "exi_create failed (is the schema present?)");
+    return ctx;
+}
 
-    std::vector<std::string> messages = collect_messages(input_path);
-    if (messages.empty()) {
-        fprintf(stderr, "Error: no .xml messages found at '%s'\n", input_path.c_str());
-        return 1;
-    }
+// ---------------------------------------------------------------- bench ----
 
-    // --- Start the GraalVM runtime and time the one-time exi_init ---
-    graal_isolate_t* isolate = nullptr;
-    graal_isolatethread_t* thread = nullptr;
-    if (graal_create_isolate(nullptr, &isolate, &thread) != 0) {
-        fprintf(stderr, "Error: failed to create GraalVM isolate\n");
-        return 1;
-    }
-    // exi_init takes a non-const char* (GraalVM's CCharPointer) but does not
-    // modify it, so const_cast is safe.
-    const auto init_t0 = clk::now();
-    if (exi_init(thread, const_cast<char*>(schema_path)) != 0) {
-        fprintf(stderr, "Error: exi_init failed (is schema '%s' present?)\n", schema_path);
-        graal_tear_down_isolate(thread);
-        return 1;
-    }
-    const double init_ms = ms_since(init_t0);
+static int cmd_bench(graal_isolatethread_t* thread, const std::string& path, long iterations) {
+    const auto t0 = clk::now();
+    exi_ctx ctx = make_ctx(thread, g_schema, 0);
+    printf("\n  Schema     : %s\n", g_schema);
+    printf("  exi_create : %.3f ms  (one-time: schema load + grammar build)\n\n", ms_since(t0));
 
-    printf("\n  Schema   : %s\n", schema_path);
-    printf("  exi_init : %.3f ms  (one-time: schema load + grammar build)\n\n", init_ms);
+    std::vector<std::string> messages = collect_messages(path);
+    if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); return 1; }
+
     printf("  %-40s %9s %9s %8s", "message", "XML", "EXI", "saved");
     if (iterations > 1) printf("  %10s %10s", "enc avg ms", "dec avg ms");
     printf("\n  %s\n", std::string(iterations > 1 ? 92 : 69, '-').c_str());
 
     long total_xml = 0, total_exi = 0, ok = 0;
-    double enc_tot_all = 0, dec_tot_all = 0;
-    long enc_dec_calls = 0;
-
     for (const auto& msg : messages) {
         std::vector<char> xml = read_file(msg);
         std::string name = fs::path(msg).lexically_normal().string();
         if (name.size() > 40) name = "..." + name.substr(name.size() - 37);
-        if (xml.empty()) {
-            printf("  %-40s %9s\n", name.c_str(), "(unreadable)");
-            continue;
-        }
-        const int xml_len = static_cast<int>(xml.size());
+        if (xml.empty()) { printf("  %-40s %9s\n", name.c_str(), "(unreadable)"); continue; }
 
-        int exi_len = 0, out_len = 0;
+        size_t exi_len = 0;
         double enc_sum = 0, dec_sum = 0;
         bool failed = false;
-        for (long i = 0; i < iterations; ++i) {
+        for (long i = 0; i < iterations && !failed; ++i) {
+            char* exi = nullptr;
             const auto e0 = clk::now();
-            char* exi = exi_encode(thread, xml.data(), xml_len, &exi_len);
+            if (exi_encode(thread, ctx, xml.data(), xml.size(), &exi, &exi_len) != EXI_OK) { failed = true; break; }
             enc_sum += ms_since(e0);
-            if (!exi || exi_len < 0) { failed = true; break; }
+            char* out = nullptr; size_t out_len = 0;
             const auto d0 = clk::now();
-            char* out = exi_decode(thread, exi, exi_len, &out_len);
+            if (exi_decode(thread, ctx, exi, exi_len, &out, &out_len) != EXI_OK) { exi_free(thread, exi); failed = true; break; }
             dec_sum += ms_since(d0);
-            if (!out || out_len < 0) { exi_free(thread, exi); failed = true; break; }
             exi_free(thread, exi);
             exi_free(thread, out);
         }
-        if (failed) {
-            printf("  %-40s %9d %9s\n", name.c_str(), xml_len, "FAILED");
-            continue;
-        }
+        if (failed) { printf("  %-40s %9zu %9s\n", name.c_str(), xml.size(), "FAILED"); continue; }
 
-        const double saved = xml_len > 0 ? (1.0 - static_cast<double>(exi_len) / xml_len) * 100.0 : 0.0;
-        printf("  %-40s %9d %9d %7.1f%%", name.c_str(), xml_len, exi_len, saved);
+        const double saved = xml.empty() ? 0.0 : (1.0 - double(exi_len) / xml.size()) * 100.0;
+        printf("  %-40s %9zu %9zu %7.1f%%", name.c_str(), xml.size(), exi_len, saved);
         if (iterations > 1) printf("  %10.3f %10.3f", enc_sum / iterations, dec_sum / iterations);
         printf("\n");
+        total_xml += long(xml.size()); total_exi += long(exi_len); ++ok;
+    }
+    printf("  %s\n", std::string(iterations > 1 ? 92 : 69, '-').c_str());
+    printf("  %-40s %9ld %9ld %7.1f%%\n\n", (std::to_string(ok) + " message(s)").c_str(),
+           total_xml, total_exi, total_xml ? (1.0 - double(total_exi) / total_xml) * 100.0 : 0.0);
+    exi_destroy(thread, ctx);
+    return ok > 0 ? 0 : 1;
+}
 
-        total_xml += xml_len;
-        total_exi += exi_len;
-        enc_tot_all += enc_sum;
-        dec_tot_all += dec_sum;
-        enc_dec_calls += iterations;
-        ++ok;
+// ------------------------------------------------------- stubs (T3-T6) -----
+
+static int cmd_peek(graal_isolatethread_t*, const std::string&)   { fprintf(stderr, "peek: not implemented\n");   return 3; }
+static int cmd_headers(graal_isolatethread_t*, const std::string&){ fprintf(stderr, "headers: not implemented\n");return 3; }
+static int cmd_errors(graal_isolatethread_t*)                     { fprintf(stderr, "errors: not implemented\n"); return 3; }
+static int cmd_threads(graal_isolatethread_t*, int, long)         { fprintf(stderr, "threads: not implemented\n");return 3; }
+
+// ----------------------------------------------------------------- main ----
+
+static void usage(const char* prog) {
+    printf("exi-demo - capability showcase for libexificient (v2 C API)\n\n"
+           "Usage: %s <bench|peek|headers|errors|threads> [options] [path]\n\n"
+           "Options:\n"
+           "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"
+           "  -n, --iterations <N>   bench/threads: iterations per message (default: 1)\n"
+           "  -t, --threads <N>      threads: worker count (default: 4)\n"
+           "  -h, --help             this help\n", prog, g_schema);
+}
+
+int main(int argc, char** argv) {
+    std::string sub = argc > 1 ? argv[1] : "";
+    if (sub.empty() || sub == "-h" || sub == "--help") { usage(argv[0]); return sub.empty() ? 2 : 0; }
+
+    std::string path = "samples/";
+    long iterations = 1;
+    int nthreads = 4;
+    for (int i = 2; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
+        auto val = [&]() -> const char* {
+            if (i + 1 >= argc) { fprintf(stderr, "Error: %s needs a value\n", a.c_str()); exit(2); }
+            return argv[++i];
+        };
+        if (a == "-s" || a == "--schema") g_schema = val();
+        else if (a == "-n" || a == "--iterations") iterations = std::max(1L, strtol(val(), nullptr, 10));
+        else if (a == "-t" || a == "--threads") nthreads = std::max(1, int(strtol(val(), nullptr, 10)));
+        else if (a[0] != '-') path = a;
+        else { fprintf(stderr, "Error: unknown option '%s'\n", a.c_str()); usage(argv[0]); return 2; }
     }
 
-    const double overall_saved = total_xml > 0 ? (1.0 - static_cast<double>(total_exi) / total_xml) * 100.0 : 0.0;
-    printf("  %s\n", std::string(iterations > 1 ? 92 : 69, '-').c_str());
-    printf("  %-40s %9ld %9ld %7.1f%%", (std::to_string(ok) + " message(s)").c_str(),
-           total_xml, total_exi, overall_saved);
-    if (iterations > 1 && enc_dec_calls > 0)
-        printf("  %10.3f %10.3f", enc_tot_all / enc_dec_calls, dec_tot_all / enc_dec_calls);
-    printf("\n\n");
+    graal_isolate_t* isolate = nullptr;
+    graal_isolatethread_t* thread = nullptr;
+    if (graal_create_isolate(nullptr, &isolate, &thread) != 0) {
+        fprintf(stderr, "Error: failed to create GraalVM isolate\n"); return 1;
+    }
+    if (exi_lib_version(thread) != EXI_API_VERSION)
+        fprintf(stderr, "Warning: header %#x vs library %#x version mismatch\n",
+                EXI_API_VERSION, exi_lib_version(thread));
+
+    int rc;
+    if      (sub == "bench")   rc = cmd_bench(thread, path, iterations);
+    else if (sub == "peek")    rc = cmd_peek(thread, path);
+    else if (sub == "headers") rc = cmd_headers(thread, path);
+    else if (sub == "errors")  rc = cmd_errors(thread);
+    else if (sub == "threads") rc = cmd_threads(thread, nthreads, iterations);
+    else { fprintf(stderr, "Error: unknown subcommand '%s'\n\n", sub.c_str()); usage(argv[0]); rc = 2; }
 
     graal_tear_down_isolate(thread);
-    return ok > 0 ? 0 : 1;
+    return rc;
 }
