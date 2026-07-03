@@ -121,13 +121,16 @@ build\Release\exi-demo.exe -h
 ```
 exi-demo - capability showcase for libexificient (v2 C API)
 
-Usage: exi-demo <bench|peek|headers|errors|threads> [options] [path]
+Usage: exi-demo <bench|peek|headers|errors|threads|create-cost> [options] [path]
 
 Options:
   -s, --schema <path>    XSD passed to exi_create (default: ./schemas/UCI_MessageDefinitions_v2_5_0.xsd)
   -n, --iterations <N>   bench/threads: iterations per message (default: 1)
   -t, --threads <N>      threads: worker count (default: 4)
   -h, --help             this help
+
+If the linked library reports a baked schema and -s is not passed,
+every subcommand uses the baked context (NULL schema) instead.
 ```
 
 `path` is an `.xml` file or a directory searched recursively for `*.xml`
@@ -142,6 +145,7 @@ files (default: `samples/`).
 | `headers` | The `EXI_HEADER_COOKIE` flag: a plain-vs-cookie byte dump of the same message, and that a cookie-prefixed stream still decodes | `exi-demo headers samples/position-report.xml` |
 | `errors` | Every `exi_status` failure mode (bad schema, bad flag, malformed XML/EXI, undersized buffer, stale/NULL context) paired with its `exi_last_error` message | `exi-demo errors` |
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
+| `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
 
 Output below is from an actual run against the released `exificient/1.0.0`
 package (linux-arm64, containerized via `./bctl`).
@@ -243,6 +247,53 @@ $ ./build/Release/exi-demo threads -t 4 -n 100
 An `exi_ctx` is immutable after creation and safe to call concurrently from
 any number of threads attached to the isolate (`graal_attach_thread`) — no
 external locking needed.
+
+#### `create-cost`
+
+Output below is from a run against the **baked** `uci-2.5.0` package (see
+[Baked library](#baked-library)), where `create-cost` is most interesting:
+
+```
+$ ./build/Release/exi-demo create-cost
+
+  library baked schema: uci-2.5.0
+
+  exi_create(NULL)  [baked uci-2.5.0]   :    0.012 ms  (avg of 5)
+  exi_create("./schemas/UCI_MessageDefinitions_v2_5_0.xsd") :  10182.8 ms  (runtime XSD load)
+
+  baking makes context creation effectively free.
+```
+
+Against a generic build (no baked schema), `create-cost` prints only the
+runtime-load line — there's nothing baked to compare against.
+
+## Baked library
+
+`exificient` also ships a variant with a schema's grammars compiled directly
+into the native image, selected with the `baked_schema` Conan option:
+
+```sh
+conan install . -o "exificient/*:baked_schema=uci-2.5.0"
+```
+
+This resolves to a separate package_id under the same `exificient/1.0.0`
+recipe/version — restoring a baked `.tgz` into the Conan cache adds it
+alongside any generic package already there; `conan list "exificient/1.0.0:*"`
+shows both.
+
+When the linked library reports a baked schema, every `exi-demo` subcommand
+passes `NULL` as the schema to `exi_create` automatically — unless `-s` is
+given, which always forces the explicit path and disables the baked default
+for that run. `create-cost` above is what that buys: context creation drops
+from seconds (parsing and building grammars from the `.xsd` at runtime) to
+effectively free (the grammars are already compiled in).
+
+This only applies to the Linux legs of CI, which restore
+`conan-exificient-1.0.0+uci-2.5.0-linux-{x86_64,arm64}.tgz` from the
+[exi-bake-template](https://github.com/M4lwar/exi-bake-template) releases.
+The Windows leg stays on the generic `exificient/1.0.0` package — no baked
+Windows artifact is published — so `create-cost` there only ever exercises
+the runtime-load path.
 
 ## Notes
 

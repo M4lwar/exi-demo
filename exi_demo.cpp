@@ -1,14 +1,17 @@
 // exi-demo: capability showcase for libexificient's v2 C API.
 //
-//   exi-demo bench   [-s schema] [-n iters] [path]   compression ratio + timing
-//   exi-demo peek    [-s schema] [path]              message-type dispatch demo
-//   exi-demo headers [-s schema] [file.xml]          $EXI cookie on the wire
-//   exi-demo errors  [-s schema]                     status codes + exi_last_error
-//   exi-demo threads [-s schema] [-t N] [-n iters]   shared-context concurrency
+//   exi-demo bench        [-s schema] [-n iters] [path]   compression ratio + timing
+//   exi-demo peek         [-s schema] [path]              message-type dispatch demo
+//   exi-demo headers      [-s schema] [file.xml]          $EXI cookie on the wire
+//   exi-demo errors       [-s schema]                     status codes + exi_last_error
+//   exi-demo threads      [-s schema] [-t N] [-n iters]   shared-context concurrency
+//   exi-demo create-cost  [-s schema]                     baked vs runtime exi_create cost
 //
 // path: an .xml file or a directory searched recursively (default: samples/).
 // The schema (default ./schemas/UCI_MessageDefinitions_v2_5_0.xsd) and any
-// schemas it imports must exist on disk; the library bundles none.
+// schemas it imports must exist on disk; the library bundles none. If the
+// linked library reports a baked schema (see exi_baked_schema) and -s was
+// not passed, every subcommand uses the baked context (NULL schema) instead.
 
 #include <algorithm>
 #include <atomic>
@@ -28,6 +31,21 @@ namespace fs = std::filesystem;
 using clk = std::chrono::steady_clock;
 
 static const char* g_schema = "./schemas/UCI_MessageDefinitions_v2_5_0.xsd";
+static bool g_schema_overridden = false;   // set when -s is passed
+
+// Returns the baked schema id ("" if the linked library is generic).
+static std::string baked_id(graal_isolatethread_t* thread) {
+    char buf[64];
+    exi_baked_schema(thread, buf, sizeof buf);
+    return buf;
+}
+
+// Baked-aware schema selection: no -s + baked library -> NULL (baked grammars,
+// ~instant); otherwise the explicit path (~seconds for UCI).
+static const char* effective_schema(graal_isolatethread_t* thread) {
+    if (!g_schema_overridden && !baked_id(thread).empty()) return nullptr;
+    return g_schema;
+}
 
 static double ms_since(clk::time_point t0) {
     return std::chrono::duration<double, std::milli>(clk::now() - t0).count();
@@ -76,9 +94,11 @@ static exi_ctx make_ctx(graal_isolatethread_t* thread, const char* schema, uint3
 // ---------------------------------------------------------------- bench ----
 
 static int cmd_bench(graal_isolatethread_t* thread, const std::string& path, long iterations) {
+    const char* schema = effective_schema(thread);
     const auto t0 = clk::now();
-    exi_ctx ctx = make_ctx(thread, g_schema, 0);
-    printf("\n  Schema     : %s\n", g_schema);
+    exi_ctx ctx = make_ctx(thread, schema, 0);
+    if (schema) printf("\n  Schema     : %s\n", schema);
+    else printf("\n  Schema     : (baked: %s)\n", baked_id(thread).c_str());
     printf("  exi_create : %.3f ms  (one-time: schema load + grammar build)\n\n", ms_since(t0));
 
     std::vector<std::string> messages = collect_messages(path);
@@ -130,7 +150,7 @@ static int cmd_bench(graal_isolatethread_t* thread, const std::string& path, lon
 // Simulates the bus-consumer pattern: identify each message's UCI type from
 // the first bytes of its EXI form (no full decode), then "dispatch" it.
 static int cmd_peek(graal_isolatethread_t* thread, const std::string& path) {
-    exi_ctx ctx = make_ctx(thread, g_schema, 0);
+    exi_ctx ctx = make_ctx(thread, effective_schema(thread), 0);
     std::vector<std::string> messages = collect_messages(path);
     if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); exi_destroy(thread, ctx); return 1; }
 
@@ -187,8 +207,8 @@ static int cmd_headers(graal_isolatethread_t* thread, const std::string& path) {
     std::vector<char> xml = read_file(messages.front());
     if (xml.empty()) { fprintf(stderr, "Error: unreadable %s\n", messages.front().c_str()); return 1; }
 
-    exi_ctx plain = make_ctx(thread, g_schema, 0);
-    exi_ctx cookie = make_ctx(thread, g_schema, EXI_HEADER_COOKIE);
+    exi_ctx plain = make_ctx(thread, effective_schema(thread), 0);
+    exi_ctx cookie = make_ctx(thread, effective_schema(thread), EXI_HEADER_COOKIE);
 
     char* e1 = nullptr; size_t n1 = 0;
     char* e2 = nullptr; size_t n2 = 0;
@@ -244,7 +264,7 @@ static int cmd_errors(graal_isolatethread_t* thread) {
     show(thread, "create(unknown flag bit 5)",
          exi_create(thread, g_schema, 1u << 5, &ctx));
 
-    ctx = make_ctx(thread, g_schema, 0);
+    ctx = make_ctx(thread, effective_schema(thread), 0);
     char* out = nullptr; size_t out_len = 0;
     show(thread, "encode(\"this is not xml\")",
          exi_encode(thread, ctx, "this is not xml", 15, &out, &out_len));
@@ -279,7 +299,7 @@ static int cmd_threads(graal_isolate_t* isolate, graal_isolatethread_t* thread,
     if (iterations < 50) iterations = 50;
     std::vector<char> xml = read_file("samples/position-report.xml");
     if (xml.empty()) { fprintf(stderr, "Error: samples/position-report.xml unreadable\n"); return 1; }
-    exi_ctx ctx = make_ctx(thread, g_schema, 0);
+    exi_ctx ctx = make_ctx(thread, effective_schema(thread), 0);
 
     char* ref = nullptr; size_t ref_len = 0;
     if (exi_encode(thread, ctx, xml.data(), xml.size(), &ref, &ref_len) != EXI_OK)
@@ -315,16 +335,45 @@ static int cmd_threads(graal_isolate_t* isolate, graal_isolatethread_t* thread,
     return (failures == 0 && mismatches == 0) ? 0 : 1;
 }
 
+// ------------------------------------------------------------ create-cost ----
+
+// Shows why baking exists: creation cost of the baked context vs a full
+// runtime schema load of the same schema.
+static int cmd_create_cost(graal_isolatethread_t* thread) {
+    std::string id = baked_id(thread);
+    printf("\n  library baked schema: %s\n\n", id.empty() ? "(none - generic build)" : id.c_str());
+    if (!id.empty()) {
+        double total = 0;
+        const int N = 5;
+        for (int i = 0; i < N; ++i) {
+            const auto t0 = clk::now();
+            exi_ctx c = make_ctx(thread, nullptr, 0);
+            total += ms_since(t0);
+            exi_destroy(thread, c);
+        }
+        printf("  exi_create(NULL)  [baked %s]   : %8.3f ms  (avg of %d)\n", id.c_str(), total / N, N);
+    }
+    const auto t0 = clk::now();
+    exi_ctx c = make_ctx(thread, g_schema, 0);
+    double load_ms = ms_since(t0);
+    exi_destroy(thread, c);
+    printf("  exi_create(\"%s\") : %8.1f ms  (runtime XSD load)\n\n", g_schema, load_ms);
+    if (!id.empty()) printf("  baking makes context creation effectively free.\n\n");
+    return 0;
+}
+
 // ----------------------------------------------------------------- main ----
 
 static void usage(const char* prog) {
     printf("exi-demo - capability showcase for libexificient (v2 C API)\n\n"
-           "Usage: %s <bench|peek|headers|errors|threads> [options] [path]\n\n"
+           "Usage: %s <bench|peek|headers|errors|threads|create-cost> [options] [path]\n\n"
            "Options:\n"
            "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"
            "  -n, --iterations <N>   bench/threads: iterations per message (default: 1)\n"
            "  -t, --threads <N>      threads: worker count (default: 4)\n"
-           "  -h, --help             this help\n", prog, g_schema);
+           "  -h, --help             this help\n\n"
+           "If the linked library reports a baked schema and -s is not passed,\n"
+           "every subcommand uses the baked context (NULL schema) instead.\n", prog, g_schema);
 }
 
 int main(int argc, char** argv) {
@@ -341,7 +390,7 @@ int main(int argc, char** argv) {
             if (i + 1 >= argc) { fprintf(stderr, "Error: %s needs a value\n", a.c_str()); exit(2); }
             return argv[++i];
         };
-        if (a == "-s" || a == "--schema") g_schema = val();
+        if (a == "-s" || a == "--schema") { g_schema = val(); g_schema_overridden = true; }
         else if (a == "-n" || a == "--iterations") iterations = std::max(1L, strtol(val(), nullptr, 10));
         else if (a == "-t" || a == "--threads") nthreads = std::max(1, int(strtol(val(), nullptr, 10)));
         else if (a[0] != '-') path = a;
@@ -363,6 +412,7 @@ int main(int argc, char** argv) {
     else if (sub == "headers") rc = cmd_headers(thread, path);
     else if (sub == "errors")  rc = cmd_errors(thread);
     else if (sub == "threads") rc = cmd_threads(isolate, thread, nthreads, iterations);
+    else if (sub == "create-cost") rc = cmd_create_cost(thread);
     else { fprintf(stderr, "Error: unknown subcommand '%s'\n\n", sub.c_str()); usage(argv[0]); rc = 2; }
 
     graal_tear_down_isolate(thread);
