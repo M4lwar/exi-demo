@@ -81,7 +81,7 @@ static int cmd_bench(graal_isolatethread_t* thread, const std::string& path, lon
     printf("  exi_create : %.3f ms  (one-time: schema load + grammar build)\n\n", ms_since(t0));
 
     std::vector<std::string> messages = collect_messages(path);
-    if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); return 1; }
+    if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); exi_destroy(thread, ctx); return 1; }
 
     printf("  %-40s %9s %9s %8s", "message", "XML", "EXI", "saved");
     if (iterations > 1) printf("  %10s %10s", "enc avg ms", "dec avg ms");
@@ -124,9 +124,52 @@ static int cmd_bench(graal_isolatethread_t* thread, const std::string& path, lon
     return ok > 0 ? 0 : 1;
 }
 
-// ------------------------------------------------------- stubs (T3-T6) -----
+// ---------------------------------------------------------------- peek ----
 
-static int cmd_peek(graal_isolatethread_t*, const std::string&)   { fprintf(stderr, "peek: not implemented\n");   return 3; }
+// Simulates the bus-consumer pattern: identify each message's UCI type from
+// the first bytes of its EXI form (no full decode), then "dispatch" it.
+static int cmd_peek(graal_isolatethread_t* thread, const std::string& path) {
+    exi_ctx ctx = make_ctx(thread, g_schema, 0);
+    std::vector<std::string> messages = collect_messages(path);
+    if (messages.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", path.c_str()); exi_destroy(thread, ctx); return 1; }
+
+    printf("\n  %-40s %-28s %12s %12s\n", "message", "peeked type", "peek ms", "decode ms");
+    printf("  %s\n", std::string(96, '-').c_str());
+    int ok = 0;
+    for (const auto& msg : messages) {
+        std::vector<char> xml = read_file(msg);
+        if (xml.empty()) continue;
+        char* exi = nullptr; size_t exi_len = 0;
+        if (exi_encode(thread, ctx, xml.data(), xml.size(), &exi, &exi_len) != EXI_OK) continue;
+
+        char type[256]; size_t type_len = 0;
+        const auto p0 = clk::now();
+        exi_status ps = exi_peek_root(thread, ctx, exi, exi_len, type, sizeof type, &type_len);
+        const double peek_ms = ms_since(p0);
+
+        const auto d0 = clk::now();
+        char* out = nullptr; size_t out_len = 0;
+        exi_status ds = exi_decode(thread, ctx, exi, exi_len, &out, &out_len);
+        const double dec_ms = ms_since(d0);
+        if (ds == EXI_OK) exi_free(thread, out);
+
+        std::string name = fs::path(msg).filename().string();
+        if (ps == EXI_OK) {
+            // dispatch stub: a real consumer looks `type` up in a serializer registry
+            printf("  %-40s %-28s %12.3f %12.3f\n", name.c_str(), type, peek_ms, dec_ms);
+            ++ok;
+        } else {
+            printf("  %-40s %-28s\n", name.c_str(), "(peek failed)");
+        }
+        exi_free(thread, exi);
+    }
+    printf("\n  peek reads only the stream head — cost is independent of message size.\n\n");
+    exi_destroy(thread, ctx);
+    return ok > 0 ? 0 : 1;
+}
+
+// ------------------------------------------------------- stubs (T4-T6) -----
+
 static int cmd_headers(graal_isolatethread_t*, const std::string&){ fprintf(stderr, "headers: not implemented\n");return 3; }
 static int cmd_errors(graal_isolatethread_t*)                     { fprintf(stderr, "errors: not implemented\n"); return 3; }
 static int cmd_threads(graal_isolatethread_t*, int, long)         { fprintf(stderr, "threads: not implemented\n");return 3; }
