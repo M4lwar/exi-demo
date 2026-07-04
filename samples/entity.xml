@@ -11,33 +11,34 @@
   </uci:SecurityInformation>
   <uci:MessageHeader>
     <uci:SystemID>
-      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+      <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
       <uci:DescriptiveLabel>Sensor Fusion Node</uci:DescriptiveLabel>
     </uci:SystemID>
     <uci:Timestamp>2026-06-29T12:00:00Z</uci:Timestamp>
-    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
     <uci:Mode>EXERCISE</uci:Mode>
   </uci:MessageHeader>
   <uci:MessageData>
     <uci:EntityID>
-      <uci:UUID>11112222-3333-4444-5555-666677778888</uci:UUID>
+      <uci:UUID>54470a7a-1b4d-59cc-9df5-4cfb08732280</uci:UUID>
     </uci:EntityID>
     <uci:CreationTimestamp>
       <uci:DateTime>2026-06-29T11:59:30Z</uci:DateTime>
     </uci:CreationTimestamp>
     <uci:Source>
       <uci:SystemID>
-        <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+        <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
       </uci:SystemID>
       <uci:SourceType>FUSION_C2</uci:SourceType>
     </uci:Source>
     <uci:EntityStatus>CONFIRMED</uci:EntityStatus>
     <uci:OperationalStatus>OPR</uci:OperationalStatus>
     <uci:Identity>
-      <uci:IdentityTimestamp>2026-06-29T12:00:00Z</uci:IdentityTimestamp>
       <uci:Standard>
         <uci:StandardIdentity>FRIEND</uci:StandardIdentity>
-        <uci:Allegiance>USA</uci:Allegiance>
+        <uci:Allegiance>
+          <uci:CountryName>UNITED_STATES</uci:CountryName>
+        </uci:Allegiance>
         <uci:Confidence>95</uci:Confidence>
       </uci:Standard>
       <uci:Environment>
@@ -49,6 +50,7 @@
         <uci:PlatformTypeCategory>AIR</uci:PlatformTypeCategory>
         <uci:Confidence>80</uci:Confidence>
       </uci:Platform>
+      <uci:IdentityTimestamp>2026-06-29T12:00:00Z</uci:IdentityTimestamp>
     </uci:Identity>
     <uci:Mobility>MOVER</uci:Mobility>
     <uci:Kinematics>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uci:NavigationReport
+    xmlns:uci="https://www.vdl.afrl.af.mil/programs/oam"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://www.vdl.afrl.af.mil/programs/oam schemas/UCI_MessageDefinitions_v2_5_0.xsd">
+  <uci:SecurityInformation>
+    <uci:Classification>U</uci:Classification>
+    <uci:OwnerProducer>
+      <uci:GovernmentIdentifier>USA</uci:GovernmentIdentifier>
+    </uci:OwnerProducer>
+  </uci:SecurityInformation>
+  <uci:MessageHeader>
+    <uci:SystemID>
+      <uci:UUID>8a350ab8-cf2d-5201-ad2a-de45027bb737</uci:UUID>
+      <uci:DescriptiveLabel>Sender System - Navigation Report Publisher</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:Timestamp>2026-07-04T12:00:00Z</uci:Timestamp>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
+    <uci:Mode>EXERCISE</uci:Mode>
+    <uci:ServiceID>
+      <uci:UUID>c02e7f24-0c6c-5fbb-be1a-2746b46e27d8</uci:UUID>
+      <uci:DescriptiveLabel>Navigation Report Publication Service</uci:DescriptiveLabel>
+      <uci:ServiceVersion>2.5.1</uci:ServiceVersion>
+    </uci:ServiceID>
+    <uci:MissionID>
+      <uci:UUID>9519f5ce-d962-5d33-a828-86e2a03d5321</uci:UUID>
+      <uci:DescriptiveLabel>Exercise Sentinel Skies 26-3</uci:DescriptiveLabel>
+      <uci:Version>3</uci:Version>
+    </uci:MissionID>
+  </uci:MessageHeader>
+  <uci:MessageData>
+    <uci:SystemID>
+      <uci:UUID>f836971d-0c33-5cd5-8b7d-6d2ceac2f81b</uci:UUID>
+      <uci:DescriptiveLabel>UAV Alpha-01 Navigation Subsystem</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:Source>ACTUAL</uci:Source>
+    <uci:ContingencyLevel>NORMAL</uci:ContingencyLevel>
+    <uci:Endurance>
+      <uci:Duration>PT2H30M</uci:Duration>
+      <uci:Percent>72</uci:Percent>
+    </uci:Endurance>
+    <uci:Navigation>
+      <uci:ActivityID>
+        <uci:UUID>c79f8497-bc22-5867-9375-4d27ba620d1f</uci:UUID>
+        <uci:DescriptiveLabel>Current Route-Following Navigation Activity - Leg 3</uci:DescriptiveLabel>
+      </uci:ActivityID>
+      <uci:NavigationSource>MISSION_PLAN_NAVIGATION</uci:NavigationSource>
+    </uci:Navigation>
+  </uci:MessageData>
+</uci:NavigationReport>

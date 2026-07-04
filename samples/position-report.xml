@@ -14,18 +14,18 @@
 
   <uci:MessageHeader>
     <uci:SystemID>
-      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+      <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
       <uci:DescriptiveLabel>Sender System</uci:DescriptiveLabel>
     </uci:SystemID>
     <uci:Timestamp>2026-06-27T12:00:00Z</uci:Timestamp>
-    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
     <uci:Mode>EXERCISE</uci:Mode>
   </uci:MessageHeader>
 
   <!-- PositionReportMDT fields -->
   <uci:MessageData>
     <uci:SystemID>
-      <uci:UUID>b2c3d4e5-f6a7-8901-bcde-f12345678901</uci:UUID>
+      <uci:UUID>6546ab05-b01d-5ade-b608-9a4c13be3c14</uci:UUID>
       <uci:DescriptiveLabel>Reporting Platform</uci:DescriptiveLabel>
     </uci:SystemID>
     <uci:DisplayName>UAV-ALPHA-01</uci:DisplayName>

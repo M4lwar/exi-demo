@@ -147,6 +147,32 @@ files (default: `samples/`).
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
 | `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
 
+### Samples
+
+`samples/` has ten UCI 2.5 messages, all `xmllint`-validated against
+`schemas/UCI_MessageDefinitions_v2_5_0.xsd`:
+
+- Six small messages (`entity.xml`, `navigation-report.xml`,
+  `position-report-detailed.xml`, `position-report.xml`,
+  `task-command.xml`, `task.xml`) — one message type each, light on
+  repeated strings.
+- Four larger, string/UUID-dense messages (`flight-capability.xml`,
+  `flight-capability-status.xml`, `nav-heavy.xml`, `posdet-heavy.xml`) that
+  exercise a `FlightCapability`/`FlightCapabilityStatus`-style profile with
+  many repeated enum tokens and cross-message UUID reuse (a status message
+  referencing capability IDs declared in a companion capability-advertisement
+  message) — useful for seeing how EXI compression behaves on
+  string-heavy payloads rather than the numeric/kinematic fields the six
+  smaller samples emphasize.
+
+Every UUID in every sample is a deterministic UUIDv5 (RFC 4122, name-based,
+not random v4): a fixed namespace UUID derived once via
+`uuid5(NAMESPACE_DNS, "exi-demo.example.com")`, then each entity's ID is
+`uuid5(namespace, "<role>/<name>")` for a self-documenting name string (e.g.
+`system/uav-01`, `capability/flight/must-fly-primary`). This makes every ID
+in `samples/` reproducible from its name rather than randomly generated, and
+lets the same logical entity share one UUID across multiple sample files.
+
 Output below is from an actual run against the released `exificient/1.0.0`
 package (linux-arm64, containerized via `./bctl`).
 
@@ -156,24 +182,34 @@ package (linux-arm64, containerized via `./bctl`).
 $ ./build/Release/exi-demo bench samples/
 
   Schema     : ./schemas/UCI_MessageDefinitions_v2_5_0.xsd
-  exi_create : 9394.332 ms  (one-time: schema load + grammar build)
+  exi_create : 8761.389 ms  (one-time: schema load + grammar build)
 
   message                                        XML       EXI    saved
   ---------------------------------------------------------------------
-  samples/entity.xml                            3466       259    92.5%
-  samples/navigation-report.xml                 1168        81    93.1%
-  samples/position-report-detailed.xml          2383       129    94.6%
-  samples/position-report.xml                   1798       139    92.3%
-  samples/task-command.xml                      1460       121    91.7%
-  samples/task.xml                              1403        81    94.2%
+  samples/entity.xml                            3533       207    94.1%
+  samples/flight-capability-status.xml          6588      1118    83.0%
+  samples/flight-capability.xml                 6283       672    89.3%
+  samples/nav-heavy.xml                         2153       340    84.2%
+  samples/navigation-report.xml                 1170        83    92.9%
+  samples/posdet-heavy.xml                      3377       397    88.2%
+  samples/position-report-detailed.xml          2385       131    94.5%
+  samples/position-report.xml                   1800       140    92.2%
+  samples/task-command.xml                      1462       122    91.7%
+  samples/task.xml                              1405        83    94.1%
   ---------------------------------------------------------------------
-  6 message(s)                                 11678       810    93.1%
+  10 message(s)                                30156      3293    89.1%
 ```
 
 `exi_create` pays the schema-parse + grammar-build cost once (seconds, for
 the ~8 MB UCI schema); every `exi_encode`/`exi_decode` afterward is well
 under a millisecond. Reuse a context for the process lifetime rather than
 recreating it per message.
+
+The four string/UUID-dense samples save noticeably less than the six small
+ones (83-89% vs. 92-94%): more distinct string/enum/UUID literals per
+message means more string-table setup cost that a single-message encode
+can't amortize — expected, and consistent with the fragment-vs-separate
+findings that motivated adding these samples.
 
 #### `peek`
 
@@ -182,31 +218,39 @@ $ ./build/Release/exi-demo peek samples/
 
   message                                  peeked type                       peek ms    decode ms
   ------------------------------------------------------------------------------------------------
-  entity.xml                               Entity                              0.007        0.196
-  navigation-report.xml                    NavigationReport                    0.003        0.089
-  position-report-detailed.xml             PositionReportDetailed              0.002        0.092
-  position-report.xml                      PositionReport                      0.002        0.084
-  task-command.xml                         TaskCommand                         0.002        0.083
-  task.xml                                 Task                                0.002        0.076
+  entity.xml                               Entity                              0.006        0.162
+  flight-capability-status.xml             FlightCapabilityStatus              0.003        0.161
+  flight-capability.xml                    FlightCapability                    0.002        0.144
+  nav-heavy.xml                            NavigationReport                    0.004        0.123
+  navigation-report.xml                    NavigationReport                    0.003        0.100
+  posdet-heavy.xml                         PositionReportDetailed              0.003        0.119
+  position-report-detailed.xml             PositionReportDetailed              0.002        0.085
+  position-report.xml                      PositionReport                      0.002        0.078
+  task-command.xml                         TaskCommand                         0.002        0.089
+  task.xml                                 Task                                0.002        0.077
 
   peek reads only the stream head — cost is independent of message size.
 ```
 
-`exi_peek_root` was 12x-328x faster than a full decode across this sample
+`exi_peek_root` was 20x-60x faster than a full decode across this sample
 set — useful for routing a message by type before deciding whether (and how)
-to decode it.
+to decode it. `flight-capability.xml`/`flight-capability-status.xml` peek as
+`FlightCapability`/`FlightCapabilityStatus`; `nav-heavy.xml` and
+`posdet-heavy.xml` are the same underlying `NavigationReport` /
+`PositionReportDetailed` message types as their smaller counterparts, just
+with denser string/UUID content.
 
 #### `headers`
 
 ```
 $ ./build/Release/exi-demo headers samples/position-report.xml
 
-  message: samples/position-report.xml (1798 bytes XML)
+  message: samples/position-report.xml (1800 bytes XML)
 
-  default:       80 6f c4 03 ac 7c 09 a2 29 0e 64 a1 41 53 58 e0   |.o...|..).d.ASX.|
-  with cookie:   24 45 58 49 80 6f c4 03 ac 7c 09 a2 29 0e 64 a1   |$EXI.o...|..).d.|
+  default:       80 6f c4 03 ac 7c 09 8e 53 a0 85 a5 01 51 52 c0   |.o...|..S....QR.|
+  with cookie:   24 45 58 49 80 6f c4 03 ac 7c 09 8e 53 a0 85 a5   |$EXI.o...|..S...|
 
-  cookie stream starts with "$EXI": yes;  size cost: 4 bytes (139 -> 143)
+  cookie stream starts with "$EXI": yes;  size cost: 4 bytes (140 -> 144)
   cookie stream decodes via plain ctx: yes
 ```
 

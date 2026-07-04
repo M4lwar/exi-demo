@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uci:FlightCapabilityStatus
+    xmlns:uci="https://www.vdl.afrl.af.mil/programs/oam"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://www.vdl.afrl.af.mil/programs/oam schemas/UCI_MessageDefinitions_v2_5_0.xsd">
+
+  <!-- MessageType base fields -->
+  <uci:SecurityInformation>
+    <uci:Classification>U</uci:Classification>
+    <uci:OwnerProducer>
+      <uci:GovernmentIdentifier>USA</uci:GovernmentIdentifier>
+    </uci:OwnerProducer>
+  </uci:SecurityInformation>
+
+  <uci:MessageHeader>
+    <uci:SystemID>
+      <uci:UUID>8a350ab8-cf2d-5201-ad2a-de45027bb737</uci:UUID>
+      <uci:DescriptiveLabel>Sender System - Flight Capability Publisher</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:Timestamp>2026-07-04T12:05:00Z</uci:Timestamp>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
+    <uci:Mode>EXERCISE</uci:Mode>
+    <uci:ServiceID>
+      <uci:UUID>04ec5da6-0986-57c2-80e1-e4207be29da5</uci:UUID>
+      <uci:DescriptiveLabel>Flight Capability Status Publication Service</uci:DescriptiveLabel>
+      <uci:ServiceVersion>2.5.1</uci:ServiceVersion>
+    </uci:ServiceID>
+    <uci:MissionID>
+      <uci:UUID>9519f5ce-d962-5d33-a828-86e2a03d5321</uci:UUID>
+      <uci:DescriptiveLabel>Exercise Sentinel Skies 26-3</uci:DescriptiveLabel>
+      <uci:Version>3</uci:Version>
+    </uci:MissionID>
+  </uci:MessageHeader>
+
+  <!-- FlightCapabilityStatusMDT: CapabilityStatusBaseType (MDF_Status) + multiple CapabilityStatus groupings -->
+  <uci:MessageData>
+
+    <uci:MDF_Status>
+      <uci:CurrentMDF>
+        <uci:MDF_ID>
+          <uci:UUID>f0c9ea93-0507-5333-9a78-36aab152ca53</uci:UUID>
+          <uci:DescriptiveLabel>Currently Active Flight Envelope MDF</uci:DescriptiveLabel>
+        </uci:MDF_ID>
+      </uci:CurrentMDF>
+      <uci:CommandedMDF>
+        <uci:MDF_ID>
+          <uci:UUID>e03cf8cc-c0aa-5237-8bff-164a4f135a71</uci:UUID>
+          <uci:DescriptiveLabel>Commanded Loiter Profile MDF - Pending Activation</uci:DescriptiveLabel>
+        </uci:MDF_ID>
+      </uci:CommandedMDF>
+    </uci:MDF_Status>
+
+    <!-- CapabilityStatus 1: reuses capability/flight/must-fly-primary from flight-capability.xml -->
+    <uci:CapabilityStatus>
+      <uci:CapabilityID>
+        <uci:UUID>9c1195fd-63b4-5a72-8002-605ebcea34b5</uci:UUID>
+        <uci:DescriptiveLabel>Primary Must-Fly Waypoint Sequencer</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:Availability>AVAILABLE</uci:Availability>
+      <uci:CapabilityPrecedence>1</uci:CapabilityPrecedence>
+      <uci:RepresentationKey>
+        <uci:Key>ALPHA-WING-PRIMARY-001</uci:Key>
+        <uci:SystemName>MissionPlanningSuite</uci:SystemName>
+      </uci:RepresentationKey>
+    </uci:CapabilityStatus>
+
+    <!-- CapabilityStatus 2: reuses capability/flight/loiter-autonomous; temporarily unavailable with reason + prediction -->
+    <uci:CapabilityStatus>
+      <uci:CapabilityID>
+        <uci:UUID>ef97594b-0a15-5bef-918c-5d48a4edc0bb</uci:UUID>
+        <uci:DescriptiveLabel>Contested-Zone Autonomous Loiter Manager</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:Availability>TEMPORARILY_UNAVAILABLE</uci:Availability>
+      <uci:AvailabilityReason>
+        <uci:Reason>CONSTRAINT_ENDURANCE</uci:Reason>
+        <uci:Description>Loiter manager suspended pending fuel-state recalculation after extended contested-zone hold.</uci:Description>
+        <uci:AssociatedID>
+          <uci:UUID>0adb49f7-b908-5878-9458-32940b9df757</uci:UUID>
+          <uci:DescriptiveLabel>Maintenance Hold Ticket FC-2026-0704-02</uci:DescriptiveLabel>
+        </uci:AssociatedID>
+      </uci:AvailabilityReason>
+      <uci:PredictedAvailability>
+        <uci:Availability>AVAILABLE</uci:Availability>
+        <uci:Window>
+          <uci:Begin>2026-07-04T14:00:00Z</uci:Begin>
+          <uci:End>2026-07-04T20:00:00Z</uci:End>
+        </uci:Window>
+      </uci:PredictedAvailability>
+      <uci:CapabilityPrecedence>4</uci:CapabilityPrecedence>
+    </uci:CapabilityStatus>
+
+    <!-- CapabilityStatus 3: reuses capability/flight/must-fly-secondary -->
+    <uci:CapabilityStatus>
+      <uci:CapabilityID>
+        <uci:UUID>df52de0e-9832-5307-9c49-5c0f7818e5f3</uci:UUID>
+        <uci:DescriptiveLabel>Secondary Must-Fly Route Follower</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:Availability>AVAILABLE</uci:Availability>
+      <uci:CapabilityPrecedence>2</uci:CapabilityPrecedence>
+    </uci:CapabilityStatus>
+
+    <!-- CapabilityStatus 4: new capability/flight/rotary-wing-backup, unavailable/faulted -->
+    <uci:CapabilityStatus>
+      <uci:CapabilityID>
+        <uci:UUID>f92e3584-952b-5353-8bb5-73f113042bf1</uci:UUID>
+        <uci:DescriptiveLabel>Rotary-Wing Backup Flight Capability</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:Availability>FAULTED</uci:Availability>
+      <uci:AvailabilityReason>
+        <uci:Reason>CAPABILITY_FAULT</uci:Reason>
+        <uci:Description>Backup flight controller failed built-in-test after cold start; awaiting field service reset.</uci:Description>
+      </uci:AvailabilityReason>
+      <uci:CapabilityPrecedence>5</uci:CapabilityPrecedence>
+    </uci:CapabilityStatus>
+
+    <!-- CapabilityStatus 5: new capability/flight/reserve-loiter-unit, disabled with nested predicted-availability reason -->
+    <uci:CapabilityStatus>
+      <uci:CapabilityID>
+        <uci:UUID>c0a7a2ef-64eb-521a-a9af-aa5f350f95d7</uci:UUID>
+        <uci:DescriptiveLabel>Reserve Loiter Unit - Charlie Flight</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:Availability>DISABLED</uci:Availability>
+      <uci:AvailabilityReason>
+        <uci:Reason>CONSTRAINT_CLASSIFICATION</uci:Reason>
+        <uci:Description>Reserve loiter unit disabled pending re-classification of the operating area for this exercise.</uci:Description>
+      </uci:AvailabilityReason>
+      <uci:PredictedAvailability>
+        <uci:Availability>AVAILABLE</uci:Availability>
+        <uci:Window>
+          <uci:Begin>2026-07-05T06:00:00Z</uci:Begin>
+        </uci:Window>
+        <uci:StateReason>
+          <uci:Reason>CONSTRAINT_CLASSIFICATION</uci:Reason>
+          <uci:Description>Expected to clear once updated classification guidance for the exercise area is published.</uci:Description>
+        </uci:StateReason>
+      </uci:PredictedAvailability>
+      <uci:RepresentationKey>
+        <uci:Key>CHARLIE-RESERVE-LOITER-005</uci:Key>
+        <uci:SystemName>MissionPlanningSuite</uci:SystemName>
+      </uci:RepresentationKey>
+    </uci:CapabilityStatus>
+
+  </uci:MessageData>
+
+</uci:FlightCapabilityStatus>
