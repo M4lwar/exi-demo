@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -262,7 +263,7 @@ static int cmd_errors(graal_isolatethread_t* thread) {
     show(thread, "create(missing schema xsd)",
          exi_create(thread, "no/such/schema.xsd", 0, &ctx));
     show(thread, "create(unknown flag bit 5)",
-         exi_create(thread, g_schema, 1u << 5, &ctx));
+         exi_create(thread, effective_schema(thread), 1u << 5, &ctx));
 
     ctx = make_ctx(thread, effective_schema(thread), 0);
     char* out = nullptr; size_t out_len = 0;
@@ -352,6 +353,10 @@ static int cmd_create_cost(graal_isolatethread_t* thread) {
             exi_destroy(thread, c);
         }
         printf("  exi_create(NULL)  [baked %s]   : %8.3f ms  (avg of %d)\n", id.c_str(), total / N, N);
+    }
+    if (!std::ifstream(g_schema).good()) {
+        printf("  (schema file not found - skipping runtime-load comparison)\n\n");
+        return 0;
     }
     const auto t0 = clk::now();
     exi_ctx c = make_ctx(thread, g_schema, 0);

@@ -28,7 +28,7 @@ jobs:
           python-version: "3.12"
       - name: Install Conan
         run: pip install "conan>=2.0"
-      - name: Restore exificient packages (baked uci-2.5.0 + generic fallback)
+      - name: Restore baked uci-2.5.0 exificient package
         run: |
           curl -fsSL -o exi-baked.tgz \
             "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.0-uci-2.5.0/conan-exificient-1.0.0+uci-2.5.0-linux-${{ matrix.arch }}.tgz"
@@ -62,16 +62,16 @@ jobs:
           python-version: "3.12"
       - name: Install Conan
         run: pip install "conan>=2.0"
-      - name: Restore exificient package from release
+      - name: Restore baked uci-2.5.0 exificient package
         shell: pwsh
         run: |
-          Invoke-WebRequest "https://github.com/M4lwar/exificient-native-image/releases/download/v$env:EXIFICIENT_VERSION/conan-exificient-$env:EXIFICIENT_VERSION-windows-x86_64.tgz" -OutFile exi.tgz
+          Invoke-WebRequest "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.0-uci-2.5.0/conan-exificient-1.0.0+uci-2.5.0-windows-x86_64.tgz" -OutFile exi.tgz
           conan profile detect --force
           conan cache restore exi.tgz
       - name: Build
         shell: pwsh
         run: |
-          conan install .
+          conan install . -o "exificient/*:baked_schema=uci-2.5.0"
           # CMAKE_TOOLCHAIN_FILE must be ABSOLUTE — a relative path is resolved
           # against the build dir, not CWD.
           $tc = (Get-ChildItem -Recurse -Filter conan_toolchain.cmake build | Select-Object -First 1).FullName
