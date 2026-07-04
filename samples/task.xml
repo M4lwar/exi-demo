@@ -11,15 +11,15 @@
   </uci:SecurityInformation>
   <uci:MessageHeader>
     <uci:SystemID>
-      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+      <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
     </uci:SystemID>
     <uci:Timestamp>2026-07-01T12:00:00Z</uci:Timestamp>
-    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
     <uci:Mode>EXERCISE</uci:Mode>
   </uci:MessageHeader>
   <uci:MessageData>
     <uci:TaskID>
-      <uci:UUID>33334444-5555-6666-7777-888899990000</uci:UUID>
+      <uci:UUID>14687efa-6dbf-5701-84a2-4f7bd631982e</uci:UUID>
     </uci:TaskID>
     <uci:TaskType>
       <uci:AirSample>

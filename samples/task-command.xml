@@ -11,21 +11,21 @@
   </uci:SecurityInformation>
   <uci:MessageHeader>
     <uci:SystemID>
-      <uci:UUID>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uci:UUID>
+      <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
     </uci:SystemID>
     <uci:Timestamp>2026-07-01T12:00:00Z</uci:Timestamp>
-    <uci:SchemaVersion>002.5</uci:SchemaVersion>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
     <uci:Mode>EXERCISE</uci:Mode>
   </uci:MessageHeader>
   <uci:MessageData>
     <uci:Command>
       <uci:Capability>
         <uci:CommandID>
-          <uci:UUID>aaaa1111-bbbb-2222-cccc-333344445555</uci:UUID>
+          <uci:UUID>c6b47e9c-9e0d-5e5f-b404-cb7eaa81b1d4</uci:UUID>
         </uci:CommandID>
         <uci:CommandState>NEW</uci:CommandState>
         <uci:CapabilityID>
-          <uci:UUID>bbbb2222-cccc-3333-dddd-444455556666</uci:UUID>
+          <uci:UUID>2af7aba6-e971-502a-a62c-62476d90bffe</uci:UUID>
         </uci:CapabilityID>
         <uci:Ranking>
           <uci:Rank>
@@ -33,7 +33,7 @@
           </uci:Rank>
         </uci:Ranking>
         <uci:TaskID>
-          <uci:UUID>33334444-5555-6666-7777-888899990000</uci:UUID>
+          <uci:UUID>14687efa-6dbf-5701-84a2-4f7bd631982e</uci:UUID>
         </uci:TaskID>
       </uci:Capability>
     </uci:Command>

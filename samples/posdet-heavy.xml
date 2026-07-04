@@ -11,27 +11,44 @@
   </uci:SecurityInformation>
   <uci:MessageHeader>
     <uci:SystemID>
-      <uci:UUID>646734dd-e1df-5b17-99ef-237b032cefa5</uci:UUID>
+      <uci:UUID>8a350ab8-cf2d-5201-ad2a-de45027bb737</uci:UUID>
+      <uci:DescriptiveLabel>Sender System - Position Report Detailed Publisher</uci:DescriptiveLabel>
     </uci:SystemID>
-    <uci:Timestamp>2026-07-01T12:00:00Z</uci:Timestamp>
+    <uci:Timestamp>2026-07-04T12:00:00Z</uci:Timestamp>
     <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
     <uci:Mode>EXERCISE</uci:Mode>
+    <uci:ServiceID>
+      <uci:UUID>ca860753-b395-5a6b-acdc-291d44e992b0</uci:UUID>
+      <uci:DescriptiveLabel>Position Report Detailed Publication Service</uci:DescriptiveLabel>
+      <uci:ServiceVersion>2.5.1</uci:ServiceVersion>
+    </uci:ServiceID>
+    <uci:MissionID>
+      <uci:UUID>9519f5ce-d962-5d33-a828-86e2a03d5321</uci:UUID>
+      <uci:DescriptiveLabel>Exercise Sentinel Skies 26-3</uci:DescriptiveLabel>
+      <uci:Version>3</uci:Version>
+    </uci:MissionID>
   </uci:MessageHeader>
   <uci:MessageData>
     <uci:PositionReportData>
       <uci:PositionSource>
         <uci:SystemID>
-          <uci:UUID>6546ab05-b01d-5ade-b608-9a4c13be3c14</uci:UUID>
+          <uci:UUID>2ff62751-7d8a-590f-931d-3d2a8ef865e1</uci:UUID>
+          <uci:DescriptiveLabel>UAV Alpha-01 Position Source Subsystem</uci:DescriptiveLabel>
         </uci:SystemID>
       </uci:PositionSource>
+      <uci:ComponentID>
+        <uci:UUID>c25150d8-3e70-57f0-8102-4363d51f6b43</uci:UUID>
+        <uci:DescriptiveLabel>Primary INS/GPS Blended Navigation Unit</uci:DescriptiveLabel>
+      </uci:ComponentID>
       <uci:NavigationSolutionState>GPS</uci:NavigationSolutionState>
+      <uci:FigureOfMerit>3</uci:FigureOfMerit>
       <uci:Kinematics>
         <uci:Position>
           <uci:AbsolutePoint>
             <uci:Latitude>0.679042</uci:Latitude>
             <uci:Longitude>-1.344350</uci:Longitude>
             <uci:Altitude>9144.0</uci:Altitude>
-            <uci:Timestamp>2026-07-01T12:00:00Z</uci:Timestamp>
+            <uci:Timestamp>2026-07-04T12:00:00Z</uci:Timestamp>
           </uci:AbsolutePoint>
         </uci:Position>
         <uci:Velocity>
@@ -59,5 +76,6 @@
         </uci:VelocityVelocityCovariance>
       </uci:KinematicsError>
     </uci:PositionReportData>
+    <uci:SimulationTargetNumber>42017</uci:SimulationTargetNumber>
   </uci:MessageData>
 </uci:PositionReportDetailed>

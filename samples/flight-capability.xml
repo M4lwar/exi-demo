@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uci:FlightCapability
+    xmlns:uci="https://www.vdl.afrl.af.mil/programs/oam"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://www.vdl.afrl.af.mil/programs/oam schemas/UCI_MessageDefinitions_v2_5_0.xsd">
+
+  <!-- MessageType base fields -->
+  <uci:SecurityInformation>
+    <uci:Classification>U</uci:Classification>
+    <uci:OwnerProducer>
+      <uci:GovernmentIdentifier>USA</uci:GovernmentIdentifier>
+    </uci:OwnerProducer>
+  </uci:SecurityInformation>
+
+  <uci:MessageHeader>
+    <uci:SystemID>
+      <uci:UUID>8a350ab8-cf2d-5201-ad2a-de45027bb737</uci:UUID>
+      <uci:DescriptiveLabel>Sender System - Flight Capability Publisher</uci:DescriptiveLabel>
+    </uci:SystemID>
+    <uci:Timestamp>2026-07-04T12:00:00Z</uci:Timestamp>
+    <uci:SchemaVersion>002.5.0</uci:SchemaVersion>
+    <uci:Mode>EXERCISE</uci:Mode>
+    <uci:ServiceID>
+      <uci:UUID>52fa7aba-065c-5a22-abd6-565b6fbf006c</uci:UUID>
+      <uci:DescriptiveLabel>Flight Capability Publication Service</uci:DescriptiveLabel>
+      <uci:ServiceVersion>2.5.1</uci:ServiceVersion>
+    </uci:ServiceID>
+    <uci:MissionID>
+      <uci:UUID>9519f5ce-d962-5d33-a828-86e2a03d5321</uci:UUID>
+      <uci:DescriptiveLabel>Exercise Sentinel Skies 26-3</uci:DescriptiveLabel>
+      <uci:Version>3</uci:Version>
+    </uci:MissionID>
+  </uci:MessageHeader>
+
+  <uci:ObjectState>UPDATED</uci:ObjectState>
+
+  <!-- FlightCapabilityMDT: CapabilityBaseType (AvailableMDF) + multiple Capability entries -->
+  <uci:MessageData>
+
+    <uci:AvailableMDF>
+      <uci:MDF_ID>
+        <uci:UUID>b155f3db-ae77-5e76-868e-306125fb53d7</uci:UUID>
+        <uci:DescriptiveLabel>Nominal Flight Envelope MDF, Rev C</uci:DescriptiveLabel>
+      </uci:MDF_ID>
+      <uci:MDF_Status>ACTIVE</uci:MDF_Status>
+    </uci:AvailableMDF>
+
+    <uci:AvailableMDF>
+      <uci:MDF_ID>
+        <uci:UUID>59937f3b-cdc4-5553-a836-4ed3a996a6f1</uci:UUID>
+        <uci:DescriptiveLabel>Contested Airspace Loiter Profile MDF</uci:DescriptiveLabel>
+      </uci:MDF_ID>
+      <uci:MDF_Status>INACTIVE</uci:MDF_Status>
+    </uci:AvailableMDF>
+
+    <!-- Capability 1: must-fly waypoint following, commandable + task interfaces -->
+    <uci:Capability>
+      <uci:CapabilityID>
+        <uci:UUID>9c1195fd-63b4-5a72-8002-605ebcea34b5</uci:UUID>
+        <uci:DescriptiveLabel>Primary Must-Fly Waypoint Sequencer</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:DomainPairing>AIR_TO_AIR</uci:DomainPairing>
+      <uci:DomainPairing>AIR_TO_GROUND</uci:DomainPairing>
+      <uci:ProductOutput>
+        <uci:ProductType>AMTI_DETECTION</uci:ProductType>
+        <uci:ProcessingType>VISIBLE</uci:ProcessingType>
+        <uci:ProductFormat>
+          <uci:MIME>application/vnd.uci.flightcapability+xml</uci:MIME>
+        </uci:ProductFormat>
+      </uci:ProductOutput>
+      <uci:PackageOperation>OPTIONAL_PACKAGE_OPERATION</uci:PackageOperation>
+      <uci:AcceptedInterface>CAPABILITY_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>TASK_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>ACTIVITY_COMMAND</uci:AcceptedInterface>
+      <uci:CommsRequired/>
+      <uci:CapabilityType>MUST_FLY</uci:CapabilityType>
+      <uci:CapabilityType>LOITER</uci:CapabilityType>
+    </uci:Capability>
+
+    <!-- Capability 2: loiter-only, auto-initiated via MDF -->
+    <uci:Capability>
+      <uci:CapabilityID>
+        <uci:UUID>ef97594b-0a15-5bef-918c-5d48a4edc0bb</uci:UUID>
+        <uci:DescriptiveLabel>Contested-Zone Autonomous Loiter Manager</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:DomainPairing>AIR_TO_SEA_SURFACE</uci:DomainPairing>
+      <uci:ProductOutput>
+        <uci:ProductType>AMTI_AUXILIARY_DATA</uci:ProductType>
+        <uci:ProductFormat>
+          <uci:MIME>text/plain</uci:MIME>
+        </uci:ProductFormat>
+      </uci:ProductOutput>
+      <uci:PackageOperation>NO_PACKAGE_OPERATION</uci:PackageOperation>
+      <uci:AcceptedInterface>AUTO_MDF</uci:AcceptedInterface>
+      <uci:CapabilityType>LOITER</uci:CapabilityType>
+    </uci:Capability>
+
+    <!-- Capability 3: must-fly with planned-requirement interface, comms not required -->
+    <uci:Capability>
+      <uci:CapabilityID>
+        <uci:UUID>df52de0e-9832-5307-9c49-5c0f7818e5f3</uci:UUID>
+        <uci:DescriptiveLabel>Secondary Must-Fly Route Follower</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:DomainPairing>AIR_TO_SPACE</uci:DomainPairing>
+      <uci:DomainPairing>AIR_TO_CYBER</uci:DomainPairing>
+      <uci:ProductOutput>
+        <uci:ProductType>AMTI_WBRD</uci:ProductType>
+        <uci:ProcessingType>VISIBLE</uci:ProcessingType>
+        <uci:ProcessingType>INFRARED</uci:ProcessingType>
+        <uci:ProductFormat>
+          <uci:MIME>application/octet-stream</uci:MIME>
+        </uci:ProductFormat>
+      </uci:ProductOutput>
+      <uci:PackageOperation>REQUIRED_PACKAGE_OPERATION</uci:PackageOperation>
+      <uci:AcceptedInterface>TASK_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>PLANNED_REQUIREMENT</uci:AcceptedInterface>
+      <uci:CapabilityType>MUST_FLY</uci:CapabilityType>
+    </uci:Capability>
+
+    <!-- Capability 4: dual-mode flight capability, full interface set -->
+    <uci:Capability>
+      <uci:CapabilityID>
+        <uci:UUID>f72234bb-a599-5e8e-bfb4-046dddabfee7</uci:UUID>
+        <uci:DescriptiveLabel>Dual-Mode Flight Capability - Alpha Wing</uci:DescriptiveLabel>
+      </uci:CapabilityID>
+      <uci:DomainPairing>AIR_TO_AIR</uci:DomainPairing>
+      <uci:ProductOutput>
+        <uci:ProductType>AMTI_DETECTION</uci:ProductType>
+        <uci:ProductFormat>
+          <uci:MIME>application/json</uci:MIME>
+        </uci:ProductFormat>
+      </uci:ProductOutput>
+      <uci:PackageOperation>OPTIONAL_PACKAGE_OPERATION</uci:PackageOperation>
+      <uci:AcceptedInterface>CAPABILITY_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>TASK_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>ACTIVITY_COMMAND</uci:AcceptedInterface>
+      <uci:AcceptedInterface>AUTO_MDF</uci:AcceptedInterface>
+      <uci:CommsRequired/>
+      <uci:CapabilityType>MUST_FLY</uci:CapabilityType>
+      <uci:CapabilityType>LOITER</uci:CapabilityType>
+    </uci:Capability>
+
+  </uci:MessageData>
+
+</uci:FlightCapability>
