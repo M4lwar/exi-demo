@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Compression + fragment: one channelized-DEFLATE stream carrying multiple document roots batched under a discarded envelope. -->
+<header xmlns="http://www.w3.org/2009/exi">
+  <common>
+    <compression/>
+    <fragment/>
+  </common>
+</header>

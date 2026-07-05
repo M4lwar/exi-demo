@@ -6,6 +6,8 @@
 //   exi-demo errors       [-s schema]                     status codes + exi_last_error
 //   exi-demo threads      [-s schema] [-t N] [-n iters]   shared-context concurrency
 //   exi-demo create-cost  [-s schema]                     baked vs runtime exi_create cost
+//   exi-demo options <options.xml> [samples-dir]          encode under a W3C EXI options
+//                                                          document; compare vs defaults
 //   exi-demo uuid <v3|v5> <namespace> <name...>           RFC 4122 name-based ids (no schema)
 //
 // path: an .xml file or a directory searched recursively (default: samples/).
@@ -265,8 +267,11 @@ static int cmd_errors(graal_isolatethread_t* thread) {
     exi_ctx ctx = nullptr;
     show(thread, "create(missing schema xsd)",
          exi_create(thread, "no/such/schema.xsd", 0, &ctx));
-    show(thread, "create(unknown flag bit 5)",
-         exi_create(thread, effective_schema(thread), 1u << 5, &ctx));
+    // bit 5 used to be unassigned; v1.0.0 promoted it to EXI_OPT_COMPRESSION
+    // (bit 1 is now EXI_OPT_OPTIONS_IN_HEADER), so it's a valid flag today -
+    // bit 15 is still genuinely unknown.
+    show(thread, "create(unknown flag bit 15)",
+         exi_create(thread, effective_schema(thread), 1u << 15, &ctx));
 
     ctx = make_ctx(thread, effective_schema(thread), 0);
     char* out = nullptr; size_t out_len = 0;
@@ -370,6 +375,113 @@ static int cmd_create_cost(graal_isolatethread_t* thread) {
     return 0;
 }
 
+// ----------------------------------------------------------------- options ----
+
+// The W3C EXI options schema only allows <fragment/> as an empty element
+// under <common> (see EXI_Options.xsd) - a plain substring match is enough
+// to detect it without pulling in an XML parser here.
+static bool wants_fragment(const std::string& options_doc) {
+    return options_doc.find("<fragment") != std::string::npos;
+}
+
+// Fragment-mode encode input follows the library's envelope convention: a
+// single well-formed XML document whose root is a transport wrapper that
+// gets DISCARDED, with its children encoded as the fragment's roots. Strip
+// any leading XML declaration and wrap the rest in a throwaway <batch> root.
+static std::string wrap_batch(const std::string& xml) {
+    size_t start = 0;
+    if (xml.compare(0, 2, "<?") == 0) {
+        size_t end = xml.find("?>");
+        start = (end == std::string::npos) ? 0 : end + 2;
+    }
+    return "<batch>" + xml.substr(start) + "</batch>";
+}
+
+// Encodes each sample under both a plain context and one built from a W3C
+// EXI options document, then demonstrates header-options interop: a stream
+// encoded with EXI_OPT_OPTIONS_IN_HEADER carries its own coding options, so
+// even a plain context (built with completely different options) decodes it.
+static int run_options(graal_isolatethread_t* thread, const std::string& optionsPath,
+                        const std::string& samplesPath) {
+    std::vector<char> options_buf = read_file(optionsPath);
+    if (options_buf.empty()) {
+        fprintf(stderr, "Error: unreadable or empty options document '%s'\n", optionsPath.c_str());
+        return 1;
+    }
+    const std::string options_doc(options_buf.begin(), options_buf.end());
+    const bool fragment = wants_fragment(options_doc);
+    const char* schema = effective_schema(thread);
+
+    exi_ctx ctxA = nullptr, ctxB = nullptr;
+    if (exi_create_with_options(thread, schema, options_buf.data(), options_buf.size(), 0, &ctxA) != EXI_OK)
+        die(thread, "exi_create_with_options failed");
+    ctxB = make_ctx(thread, schema, 0);
+
+    std::vector<std::string> messages = collect_messages(samplesPath);
+    if (messages.empty()) {
+        fprintf(stderr, "Error: no .xml at '%s'\n", samplesPath.c_str());
+        exi_destroy(thread, ctxA); exi_destroy(thread, ctxB);
+        return 1;
+    }
+
+    printf("\n  options document: %s%s\n", optionsPath.c_str(),
+           fragment ? "  (fragment: samples wrapped in a discarded <batch> envelope)" : "");
+    printf("  %-38s %11s %11s %9s\n", "sample", "plain-bytes", "doc-bytes", "delta%");
+    printf("  %s\n", std::string(74, '-').c_str());
+
+    std::string first_input;   // the exact bytes handed to ctxA for the first sample
+    int ok = 0;
+    for (const auto& msg : messages) {
+        std::vector<char> xml = read_file(msg);
+        if (xml.empty()) continue;
+        const std::string name = fs::path(msg).filename().string();
+
+        char* plain_exi = nullptr; size_t plain_len = 0;
+        if (exi_encode(thread, ctxB, xml.data(), xml.size(), &plain_exi, &plain_len) != EXI_OK)
+            die(thread, ("plain encode failed for " + msg).c_str());
+
+        const std::string doc_input = fragment ? wrap_batch(std::string(xml.begin(), xml.end()))
+                                                : std::string(xml.begin(), xml.end());
+        char* doc_exi = nullptr; size_t doc_len = 0;
+        if (exi_encode(thread, ctxA, doc_input.data(), doc_input.size(), &doc_exi, &doc_len) != EXI_OK)
+            die(thread, ("options-document encode failed for " + msg).c_str());
+        if (first_input.empty()) first_input = doc_input;
+
+        const double delta = plain_len ? (double(doc_len) - double(plain_len)) / double(plain_len) * 100.0 : 0.0;
+        printf("  %-38s %11zu %11zu %8.1f%%\n", name.c_str(), plain_len, doc_len, delta);
+        exi_free(thread, plain_exi);
+        exi_free(thread, doc_exi);
+        ++ok;
+    }
+    printf("\n");
+
+    // Header-interop demo: recreate ctx A with EXI_OPT_OPTIONS_IN_HEADER so the
+    // stream is self-describing, then decode it with the plain ctx B above -
+    // header options take precedence over context options on decode/peek.
+    exi_ctx ctxA_header = nullptr;
+    if (exi_create_with_options(thread, schema, options_buf.data(), options_buf.size(),
+                                 EXI_OPT_OPTIONS_IN_HEADER, &ctxA_header) != EXI_OK)
+        die(thread, "exi_create_with_options (header) failed");
+
+    char* foreign = nullptr; size_t foreign_len = 0;
+    if (exi_encode(thread, ctxA_header, first_input.data(), first_input.size(), &foreign, &foreign_len) != EXI_OK)
+        die(thread, "header-mode encode failed");
+
+    char* decoded = nullptr; size_t decoded_len = 0;
+    exi_status ds = exi_decode(thread, ctxB, foreign, foreign_len, &decoded, &decoded_len);
+    char root[256]; size_t root_len = 0;
+    exi_status ps = exi_peek_root(thread, ctxB, foreign, foreign_len, root, sizeof root, &root_len);
+    if (ds != EXI_OK || ps != EXI_OK) die(thread, "header-interop decode/peek failed");
+    printf("  header-interop: plain context decoded foreign stream OK (root %s)\n\n", root);
+
+    exi_free(thread, decoded);
+    exi_free(thread, foreign);
+    exi_destroy(thread, ctxA_header);
+    exi_destroy(thread, ctxA);
+    exi_destroy(thread, ctxB);
+    return ok > 0 ? 0 : 1;
+}
+
 // ------------------------------------------------------------------ uuid ----
 
 // RFC 4122 Appendix C well-known namespace UUIDs (same tail, differ only in
@@ -456,6 +568,8 @@ static int run_uuid(int argc, char** argv) {
 static void usage(const char* prog) {
     printf("exi-demo - capability showcase for libexificient (v2 C API)\n\n"
            "Usage: %s <bench|peek|headers|errors|threads|create-cost> [options] [path]\n"
+           "       %s options <options.xml> [samples-dir]  encode under a W3C EXI options\n"
+           "                                                document; compare vs defaults\n"
            "       %s uuid <v3|v5> <namespace> <name...>\n\n"
            "Options:\n"
            "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"
@@ -467,7 +581,7 @@ static void usage(const char* prog) {
            "uuid: RFC 4122 name-based ids, no schema/exi_ctx needed. namespace is\n"
            "an alias (dns|url|oid|x500) or an explicit UUID; each name arg prints\n"
            "one line ('<name>  <uuid>'), or just the UUID if there is only one.\n",
-           prog, prog, g_schema);
+           prog, prog, prog, g_schema);
 }
 
 int main(int argc, char** argv) {
@@ -475,9 +589,9 @@ int main(int argc, char** argv) {
     if (sub.empty() || sub == "-h" || sub == "--help") { usage(argv[0]); return sub.empty() ? 2 : 0; }
     if (sub == "uuid") return run_uuid(argc, argv);
 
-    std::string path = "samples/";
     long iterations = 1;
     int nthreads = 4;
+    std::vector<std::string> positional;   // bench/peek/headers/threads: [path]; options: [options.xml] [samples-dir]
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
@@ -488,9 +602,10 @@ int main(int argc, char** argv) {
         if (a == "-s" || a == "--schema") { g_schema = val(); g_schema_overridden = true; }
         else if (a == "-n" || a == "--iterations") iterations = std::max(1L, strtol(val(), nullptr, 10));
         else if (a == "-t" || a == "--threads") nthreads = std::max(1, int(strtol(val(), nullptr, 10)));
-        else if (a[0] != '-') path = a;
+        else if (a[0] != '-') positional.push_back(a);
         else { fprintf(stderr, "Error: unknown option '%s'\n", a.c_str()); usage(argv[0]); return 2; }
     }
+    std::string path = positional.empty() ? "samples/" : positional[0];
 
     graal_isolate_t* isolate = nullptr;
     graal_isolatethread_t* thread = nullptr;
@@ -508,6 +623,15 @@ int main(int argc, char** argv) {
     else if (sub == "errors")  rc = cmd_errors(thread);
     else if (sub == "threads") rc = cmd_threads(isolate, thread, nthreads, iterations);
     else if (sub == "create-cost") rc = cmd_create_cost(thread);
+    else if (sub == "options") {
+        if (positional.empty()) {
+            fprintf(stderr, "Error: usage: %s options <options.xml> [samples-dir]\n", argv[0]);
+            rc = 2;
+        } else {
+            std::string samplesPath = positional.size() > 1 ? positional[1] : "samples/";
+            rc = run_options(thread, positional[0], samplesPath);
+        }
+    }
     else { fprintf(stderr, "Error: unknown subcommand '%s'\n\n", sub.c_str()); usage(argv[0]); rc = 2; }
 
     graal_tear_down_isolate(thread);

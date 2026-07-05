@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Partner interop profile: byte-aligned, a large fixed block size, a short capped value length, and strict schema conformance (no optional EXI extensions). -->
+<header xmlns="http://www.w3.org/2009/exi">
+  <lesscommon>
+    <uncommon>
+      <alignment><byte/></alignment>
+      <valueMaxLength>64</valueMaxLength>
+    </uncommon>
+    <blockSize>500000</blockSize>
+  </lesscommon>
+  <strict/>
+</header>

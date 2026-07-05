@@ -3,10 +3,10 @@
 A small C++ example that consumes the prebuilt
 [exificient](https://github.com/M4lwar/exificient-native-image) Conan package to
 schema-informed **EXI-compress** UCI XML messages. It's a capability showcase
-for the library's v2 C ABI: five subcommands, each exercising a different part
+for the library's v2 C ABI: eight subcommands, each exercising a different part
 of the contract (compression + timing, type dispatch without a full decode,
-the `$EXI` cookie header, structured error reporting, and shared-context
-thread safety).
+the `$EXI` cookie header, structured error reporting, shared-context thread
+safety, and encoding under a partner's W3C EXI options document).
 
 No JDK or GraalVM is needed — the library is consumed as a prebuilt Conan
 package.
@@ -119,6 +119,8 @@ build\Release\exi-demo.exe -h
 exi-demo - capability showcase for libexificient (v2 C API)
 
 Usage: exi-demo <bench|peek|headers|errors|threads|create-cost> [options] [path]
+       exi-demo options <options.xml> [samples-dir]  encode under a W3C EXI options
+                                                document; compare vs defaults
        exi-demo uuid <v3|v5> <namespace> <name...>
 
 Options:
@@ -148,6 +150,7 @@ files (default: `samples/`).
 | `errors` | Every `exi_status` failure mode (bad schema, bad flag, malformed XML/EXI, undersized buffer, stale/NULL context) paired with its `exi_last_error` message | `exi-demo errors` |
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
 | `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
+| `options` | `exi_create_with_options` against a W3C EXI options document: per-sample size vs a plain context, plus `EXI_OPT_OPTIONS_IN_HEADER` header-interop | `exi-demo options docs/options/byte-aligned.xml samples/` |
 | `uuid` | RFC 4122 v3/v5 name-based ids — no schema or `exi_ctx` needed | `exi-demo uuid v5 dns www.example.com` |
 
 ### Samples
@@ -313,6 +316,43 @@ $ ./build/Release/exi-demo create-cost
 
 Against a generic build (no baked schema), `create-cost` prints only the
 runtime-load line — there's nothing baked to compare against.
+
+#### `options`
+
+```
+$ ./build/Release/exi-demo options docs/options/byte-aligned.xml samples/
+
+  options document: docs/options/byte-aligned.xml
+  sample                                 plain-bytes   doc-bytes    delta%
+  --------------------------------------------------------------------------
+  entity.xml                                     207         445    115.0%
+  navigation-report.xml                           83         162     95.2%
+  position-report.xml                            140         255     82.1%
+  task.xml                                        83         168    102.4%
+  ...                                             (ten sample rows in a real run against samples/)
+
+  header-interop: plain context decoded foreign stream OK (root Entity)
+```
+
+The `doc-bytes` column comes from a context built with
+`exi_create_with_options` from the given W3C EXI options document (spec
+§5.4 `<header>`); `plain-bytes` is the same message under a default
+`exi_create` context, so the delta shows exactly what that document's
+options cost or save. The header-interop line recreates the options
+context with `EXI_OPT_OPTIONS_IN_HEADER`, encodes one message, and decodes
+that stream with the plain context from the table above — proving the
+stream is self-describing: an EXI header carrying options takes precedence
+over whatever options the decoding context was created with, so a partner
+using different settings can still read it.
+
+This repo ships three example documents under `docs/options/`:
+`byte-aligned.xml` (byte alignment), `partner-interop.xml` (byte alignment +
+a capped block size + a capped value length + strict schema conformance),
+and `compression-fragment.xml` (compression + fragment batching — samples
+are wrapped in a `<batch>` envelope per the library's fragment convention,
+detected by a `<fragment` substring match on the document). Any other
+partner's W3C EXI options document works the same way; nothing here is
+specific to these three.
 
 #### `uuid` — RFC 4122 v3/v5 ids
 

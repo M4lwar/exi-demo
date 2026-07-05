@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Byte-aligned coding: replaces the bit-packed default so each EXI value starts on a byte boundary (easier to eyeball in a hex dump; costs a little size). -->
+<header xmlns="http://www.w3.org/2009/exi">
+  <lesscommon>
+    <uncommon>
+      <alignment><byte/></alignment>
+    </uncommon>
+  </lesscommon>
+</header>
