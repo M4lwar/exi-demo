@@ -73,7 +73,6 @@ across invocations:
         -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/generators/conan_toolchain.cmake" \
         -DCMAKE_BUILD_TYPE=Release && \
   cmake --build build/Release && \
-  source build/Release/generators/conanrun.sh && \
   ./build/Release/exi-demo bench samples/'
 ```
 
@@ -98,21 +97,19 @@ Binary: `build\Release\exi-demo.exe`.
 ## 4. Run
 
 The schema is bundled under `schemas/` and `exi_create` loads it relative to
-the working directory, so run from the repo root. The exificient shared
-library must be on the loader path, which the generated `conanrun` script
-handles.
+the working directory, so run from the repo root. `conan install` copies the
+exificient shared library next to the executable, so it runs directly — no
+environment setup.
 
 Linux:
 
 ```sh
-source build/Release/generators/conanrun.sh
 ./build/Release/exi-demo -h
 ```
 
 Windows (cmd):
 
 ```bat
-call build\generators\conanrun.bat
 build\Release\exi-demo.exe -h
 ```
 

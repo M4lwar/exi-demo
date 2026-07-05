@@ -43,7 +43,6 @@ jobs:
           cmake --build build/Release
       - name: Run
         run: |
-          source build/Release/generators/conanrun.sh
           ./build/Release/exi-demo -h
           ./build/Release/exi-demo create-cost
           ./build/Release/exi-demo bench samples/
@@ -80,7 +79,6 @@ jobs:
       - name: Run
         shell: cmd
         run: |
-          call build\generators\conanrun.bat
           build\Release\exi-demo.exe -h || exit /b 1
           build\Release\exi-demo.exe create-cost || exit /b 1
           build\Release\exi-demo.exe bench samples\ || exit /b 1

@@ -9,3 +9,8 @@ find_package(exificient CONFIG REQUIRED)
 
 add_executable(exi-demo exi_demo.cpp)
 target_link_libraries(exi-demo PRIVATE exificient::exificient)
+
+# The conanfile copies libexificient next to the executable at install time;
+# $ORIGIN makes the Linux loader look there. Windows searches the exe's own
+# directory natively and ignores this property.
+set_target_properties(exi-demo PROPERTIES BUILD_RPATH "$ORIGIN")
