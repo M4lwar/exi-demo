@@ -119,6 +119,7 @@ build\Release\exi-demo.exe -h
 exi-demo - capability showcase for libexificient (v2 C API)
 
 Usage: exi-demo <bench|peek|headers|errors|threads|create-cost> [options] [path]
+       exi-demo uuid <v3|v5> <namespace> <name...>
 
 Options:
   -s, --schema <path>    XSD passed to exi_create (default: ./schemas/UCI_MessageDefinitions_v2_5_0.xsd)
@@ -128,6 +129,10 @@ Options:
 
 If the linked library reports a baked schema and -s is not passed,
 every subcommand uses the baked context (NULL schema) instead.
+
+uuid: RFC 4122 name-based ids, no schema/exi_ctx needed. namespace is
+an alias (dns|url|oid|x500) or an explicit UUID; each name arg prints
+one line ('<name>  <uuid>'), or just the UUID if there is only one.
 ```
 
 `path` is an `.xml` file or a directory searched recursively for `*.xml`
@@ -143,6 +148,7 @@ files (default: `samples/`).
 | `errors` | Every `exi_status` failure mode (bad schema, bad flag, malformed XML/EXI, undersized buffer, stale/NULL context) paired with its `exi_last_error` message | `exi-demo errors` |
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
 | `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
+| `uuid` | RFC 4122 v3/v5 name-based ids — no schema or `exi_ctx` needed | `exi-demo uuid v5 dns www.example.com` |
 
 ### Samples
 
@@ -307,6 +313,33 @@ $ ./build/Release/exi-demo create-cost
 
 Against a generic build (no baked schema), `create-cost` prints only the
 runtime-load line — there's nothing baked to compare against.
+
+#### `uuid` — RFC 4122 v3/v5 ids
+
+Unlike the other subcommands, `uuid` needs no schema and makes no
+`exi_ctx`/library call at all — it's a standalone RFC 4122 name-based UUID
+generator (MD5/SHA-1 reference implementations vendored in
+[`uuid_hash.hpp`](uuid_hash.hpp)), included here because it's what produced
+every UUID in `samples/` (see [Samples](#samples) above):
+
+```
+$ ./build/Release/exi-demo uuid v5 dns www.example.com
+2ed6657d-e927-568b-95e1-2665a8aea6a2
+
+$ ./build/Release/exi-demo uuid v3 dns www.example.com
+5df41881-3aed-3515-88a7-2f4a814cf09e
+
+$ ./build/Release/exi-demo uuid v5 dns exi-demo.example.com
+3dd65e4d-9f1b-58dc-b5c1-5aa11c55bdbc
+```
+
+The third line reproduces the samples' own namespace id — proof that every
+UUID under `samples/` is regenerable with this tool rather than pasted in by
+hand. Capability UUIDs like these are exactly what make UCI messages
+string-table-heavy (a `FlightCapability`/`FlightCapabilityStatus` pair reuses
+the same id string across messages), which is why fragment encoding plus
+compression wins on that kind of content — see the string/UUID-dense samples
+discussion under [`bench`](#bench) above for the measured effect.
 
 ## Baked library
 

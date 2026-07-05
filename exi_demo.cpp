@@ -6,6 +6,7 @@
 //   exi-demo errors       [-s schema]                     status codes + exi_last_error
 //   exi-demo threads      [-s schema] [-t N] [-n iters]   shared-context concurrency
 //   exi-demo create-cost  [-s schema]                     baked vs runtime exi_create cost
+//   exi-demo uuid <v3|v5> <namespace> <name...>           RFC 4122 name-based ids (no schema)
 //
 // path: an .xml file or a directory searched recursively (default: samples/).
 // The schema (default ./schemas/UCI_MessageDefinitions_v2_5_0.xsd) and any
@@ -14,6 +15,7 @@
 // not passed, every subcommand uses the baked context (NULL schema) instead.
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -27,6 +29,7 @@
 #include <vector>
 
 #include "exificient.h"
+#include "uuid_hash.hpp"
 
 namespace fs = std::filesystem;
 using clk = std::chrono::steady_clock;
@@ -367,23 +370,110 @@ static int cmd_create_cost(graal_isolatethread_t* thread) {
     return 0;
 }
 
+// ------------------------------------------------------------------ uuid ----
+
+// RFC 4122 Appendix C well-known namespace UUIDs (same tail, differ only in
+// the first group).
+static const char* uuid_namespace_alias(const std::string& alias) {
+    if (alias == "dns")  return "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+    if (alias == "url")  return "6ba7b811-9dad-11d1-80b4-00c04fd430c8";
+    if (alias == "oid")  return "6ba7b812-9dad-11d1-80b4-00c04fd430c8";
+    if (alias == "x500") return "6ba7b814-9dad-11d1-80b4-00c04fd430c8";
+    return nullptr;
+}
+
+// Parses "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (hyphens optional) into 16
+// big-endian bytes. Returns false on malformed input.
+static bool parse_uuid(const std::string& s, std::array<uint8_t, 16>& out) {
+    std::string hex;
+    for (char c : s) if (c != '-') hex.push_back(c);
+    if (hex.size() != 32) return false;
+    for (int i = 0; i < 16; ++i) {
+        unsigned v;
+        if (std::sscanf(hex.c_str() + 2 * i, "%2x", &v) != 1) return false;
+        out[i] = uint8_t(v);
+    }
+    return true;
+}
+
+static std::string format_uuid(const std::array<uint8_t, 16>& id) {
+    char buf[37];
+    std::snprintf(buf, sizeof buf,
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7],
+        id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15]);
+    return buf;
+}
+
+// RFC 4122 §4.3 name-based UUID: hash(namespace_bytes_be || name_utf8), take
+// the first 16 bytes, stamp the version nibble (byte 6 high nibble = 3 or 5)
+// and the RFC variant (byte 8 top two bits = 10). Needs no exi_ctx/schema —
+// this is pure hashing, independent of the EXI library.
+static int run_uuid(int argc, char** argv) {
+    if (argc < 5) {
+        fprintf(stderr, "Error: usage: %s uuid <v3|v5> <namespace> <name...>\n", argv[0]);
+        return 2;
+    }
+    const std::string version = argv[2];
+    bool v5;
+    if (version == "v5") v5 = true;
+    else if (version == "v3") v5 = false;
+    else { fprintf(stderr, "Error: unknown uuid version '%s' (want v3 or v5)\n", version.c_str()); return 2; }
+
+    const std::string ns_arg = argv[3];
+    const char* ns_literal = uuid_namespace_alias(ns_arg);
+    std::array<uint8_t, 16> ns{};
+    if (!parse_uuid(ns_literal ? ns_literal : ns_arg, ns)) {
+        fprintf(stderr, "Error: bad namespace '%s' (want dns|url|oid|x500 or a UUID)\n", ns_arg.c_str());
+        return 2;
+    }
+
+    const bool single = (argc - 4) == 1;
+    for (int i = 4; i < argc; ++i) {
+        const std::string name = argv[i];
+        std::vector<uint8_t> msg(ns.begin(), ns.end());
+        msg.insert(msg.end(), name.begin(), name.end());
+
+        std::array<uint8_t, 16> id{};
+        if (v5) {
+            auto digest = uuid_hash::sha1(msg.data(), msg.size());
+            std::copy(digest.begin(), digest.begin() + 16, id.begin());
+        } else {
+            id = uuid_hash::md5(msg.data(), msg.size());
+        }
+        id[6] = uint8_t((id[6] & 0x0F) | (v5 ? 0x50 : 0x30));
+        id[8] = uint8_t((id[8] & 0x3F) | 0x80);
+
+        const std::string uuid_str = format_uuid(id);
+        if (single) printf("%s\n", uuid_str.c_str());
+        else printf("%s  %s\n", name.c_str(), uuid_str.c_str());
+    }
+    return 0;
+}
+
 // ----------------------------------------------------------------- main ----
 
 static void usage(const char* prog) {
     printf("exi-demo - capability showcase for libexificient (v2 C API)\n\n"
-           "Usage: %s <bench|peek|headers|errors|threads|create-cost> [options] [path]\n\n"
+           "Usage: %s <bench|peek|headers|errors|threads|create-cost> [options] [path]\n"
+           "       %s uuid <v3|v5> <namespace> <name...>\n\n"
            "Options:\n"
            "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"
            "  -n, --iterations <N>   bench/threads: iterations per message (default: 1)\n"
            "  -t, --threads <N>      threads: worker count (default: 4)\n"
            "  -h, --help             this help\n\n"
            "If the linked library reports a baked schema and -s is not passed,\n"
-           "every subcommand uses the baked context (NULL schema) instead.\n", prog, g_schema);
+           "every subcommand uses the baked context (NULL schema) instead.\n\n"
+           "uuid: RFC 4122 name-based ids, no schema/exi_ctx needed. namespace is\n"
+           "an alias (dns|url|oid|x500) or an explicit UUID; each name arg prints\n"
+           "one line ('<name>  <uuid>'), or just the UUID if there is only one.\n",
+           prog, prog, g_schema);
 }
 
 int main(int argc, char** argv) {
     std::string sub = argc > 1 ? argv[1] : "";
     if (sub.empty() || sub == "-h" || sub == "--help") { usage(argv[0]); return sub.empty() ? 2 : 0; }
+    if (sub == "uuid") return run_uuid(argc, argv);
 
     std::string path = "samples/";
     long iterations = 1;

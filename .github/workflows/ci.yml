@@ -50,6 +50,8 @@ jobs:
           ./build/Release/exi-demo headers samples/position-report.xml
           ./build/Release/exi-demo errors
           ./build/Release/exi-demo threads -t 4 -n 100
+          test "$(./build/Release/exi-demo uuid v5 dns www.example.com)" = "2ed6657d-e927-568b-95e1-2665a8aea6a2"
+          test "$(./build/Release/exi-demo uuid v3 dns www.example.com)" = "5df41881-3aed-3515-88a7-2f4a814cf09e"
 
   windows:
     name: build-windows-x86_64
@@ -86,3 +88,7 @@ jobs:
           build\Release\exi-demo.exe headers samples\position-report.xml || exit /b 1
           build\Release\exi-demo.exe errors || exit /b 1
           build\Release\exi-demo.exe threads -t 4 -n 100 || exit /b 1
+          for /f "delims=" %%u in ('build\Release\exi-demo.exe uuid v5 dns www.example.com') do set UUID_V5=%%u
+          if not "%UUID_V5%"=="2ed6657d-e927-568b-95e1-2665a8aea6a2" exit /b 1
+          for /f "delims=" %%u in ('build\Release\exi-demo.exe uuid v3 dns www.example.com') do set UUID_V3=%%u
+          if not "%UUID_V3%"=="5df41881-3aed-3515-88a7-2f4a814cf09e" exit /b 1
