@@ -8,6 +8,8 @@
 //   exi-demo create-cost  [-s schema]                     baked vs runtime exi_create cost
 //   exi-demo options <options.xml> [samples-dir]          encode under a W3C EXI options
 //                                                          document; compare vs defaults
+//   exi-demo tune [samples-dir]                           empirical options advisor: ranks a
+//                                                          7-config matrix, writes tuned-options.xml
 //   exi-demo uuid <v3|v5> <namespace> <name...>           RFC 4122 name-based ids (no schema)
 //
 // path: an .xml file or a directory searched recursively (default: samples/).
@@ -384,17 +386,34 @@ static bool wants_fragment(const std::string& options_doc) {
     return options_doc.find("<fragment") != std::string::npos;
 }
 
-// Fragment-mode encode input follows the library's envelope convention: a
-// single well-formed XML document whose root is a transport wrapper that
-// gets DISCARDED, with its children encoded as the fragment's roots. Strip
-// any leading XML declaration and wrap the rest in a throwaway <batch> root.
-static std::string wrap_batch(const std::string& xml) {
+// Strips a leading XML declaration ("<?xml ...?>"), if present, from the
+// front of a document. A second "<?xml...?>" PI is not well-formed once
+// concatenated into the middle of another document, so every batching helper
+// below routes through this before joining fragments together.
+static std::string strip_xml_decl(const std::string& xml) {
     size_t start = 0;
     if (xml.compare(0, 2, "<?") == 0) {
         size_t end = xml.find("?>");
         start = (end == std::string::npos) ? 0 : end + 2;
     }
-    return "<batch>" + xml.substr(start) + "</batch>";
+    return xml.substr(start);
+}
+
+// Fragment-mode encode input follows the library's envelope convention: a
+// single well-formed XML document whose root is a transport wrapper that
+// gets DISCARDED, with its children encoded as the fragment's roots. Strip
+// any leading XML declaration and wrap the rest in a throwaway <batch> root.
+static std::string wrap_batch(const std::string& xml) {
+    return "<batch>" + strip_xml_decl(xml) + "</batch>";
+}
+
+// Same convention, but for multiple documents at once: each is stripped of
+// its own declaration, concatenated, and the whole group wrapped in a single
+// discarded <batch> root so one fragment-mode encode covers every sample.
+static std::string wrap_batch_all(const std::vector<std::string>& xmls) {
+    std::string inner;
+    for (const auto& xml : xmls) inner += strip_xml_decl(xml);
+    return "<batch>" + inner + "</batch>";
 }
 
 // Encodes each sample under both a plain context and one built from a W3C
@@ -480,6 +499,182 @@ static int run_options(graal_isolatethread_t* thread, const std::string& options
     exi_destroy(thread, ctxA);
     exi_destroy(thread, ctxB);
     return ok > 0 ? 0 : 1;
+}
+
+// ------------------------------------------------------------------ tune ----
+
+// Assembles a W3C EXI options <header> document (see EXI_Options.xsd) from a
+// handful of booleans, respecting the schema's element sequence:
+// lesscommon/uncommon (alignment, valueMaxLength), then common (compression,
+// fragment, schemaId), then strict (unused here). schema_id is empty for the
+// benchmarking passes and set to the baked id only when emitting the final
+// tuned document.
+static std::string make_options_doc(bool byte_align, bool pre_compress, bool compression,
+                                     bool fragment, int value_max_length,
+                                     const std::string& schema_id) {
+    std::string uncommon;
+    if (byte_align) uncommon += "<alignment><byte/></alignment>";
+    else if (pre_compress) uncommon += "<alignment><pre-compress/></alignment>";
+    if (value_max_length > 0) uncommon += "<valueMaxLength>" + std::to_string(value_max_length) + "</valueMaxLength>";
+    std::string lesscommon = uncommon.empty() ? "" : "<lesscommon><uncommon>" + uncommon + "</uncommon></lesscommon>";
+
+    std::string common_body;
+    if (compression) common_body += "<compression/>";
+    if (fragment) common_body += "<fragment/>";
+    if (!schema_id.empty()) common_body += "<schemaId>" + schema_id + "</schemaId>";
+    std::string common = common_body.empty() ? "" : "<common>" + common_body + "</common>";
+
+    return "<header xmlns=\"http://www.w3.org/2009/exi\">" + lesscommon + common + "</header>";
+}
+
+struct TuneConfig {
+    const char* label;
+    bool byte_align;
+    bool pre_compress;
+    bool compression;
+    bool fragment;
+    int value_max_length;
+    bool batched;
+};
+
+// The 7-config empirical matrix from the tuning brief: one bit-packed
+// baseline, three single-knob variants, two batched-fragment variants, and
+// one representative multi-knob sweep entry.
+static const std::vector<TuneConfig> kTuneConfigs = {
+    {"bit-packed (default)",            false, false, false, false, 0,  false},
+    {"byte-aligned",                    true,  false, false, false, 0,  false},
+    {"pre-compression",                 false, true,  false, false, 0,  false},
+    {"compression",                     false, false, true,  false, 0,  false},
+    {"fragment batch (bit-packed)",     false, false, false, true,  0,  true},
+    {"fragment batch + compression",    false, false, true,  true,  0,  true},
+    {"compression + valueMaxLength 64", false, false, true,  false, 64, false},
+};
+
+// Encodes `xmls` under `ctx` per the config's methodology: batched configs
+// wrap the whole group in one <batch> envelope and encode once; single
+// configs encode each sample separately and sum the bytes. Empty subsets
+// (e.g. no string-heavy samples matched) report 0 without touching the ctx.
+static size_t tune_total(graal_isolatethread_t* thread, exi_ctx ctx, bool batched,
+                          const std::vector<std::string>& xmls, const char* label) {
+    if (xmls.empty()) return 0;
+    if (batched) {
+        std::string batch = wrap_batch_all(xmls);
+        char* exi = nullptr; size_t len = 0;
+        if (exi_encode(thread, ctx, batch.data(), batch.size(), &exi, &len) != EXI_OK)
+            die(thread, (std::string("tune: batched encode failed for '") + label + "'").c_str());
+        exi_free(thread, exi);
+        return len;
+    }
+    size_t total = 0;
+    for (const auto& xml : xmls) {
+        char* exi = nullptr; size_t len = 0;
+        if (exi_encode(thread, ctx, xml.data(), xml.size(), &exi, &len) != EXI_OK)
+            die(thread, (std::string("tune: encode failed for '") + label + "'").c_str());
+        total += len;
+        exi_free(thread, exi);
+    }
+    return total;
+}
+
+// The four larger, string/UUID-dense samples per the README's Samples
+// section (flight-capability*.xml, nav-heavy.xml, posdet-heavy.xml) all
+// match "capab" or "heavy" in their filename; none of the six smaller,
+// numeric/kinematic-heavy samples do.
+static bool is_string_heavy(const std::string& filename) {
+    return filename.find("capab") != std::string::npos || filename.find("heavy") != std::string::npos;
+}
+
+// Empirically ranks the 7-config options matrix against every sample, then
+// notes which config wins per message class, and finally writes + proves the
+// overall winner's options document as tuned-options.xml.
+static int run_tune(graal_isolatethread_t* thread, const std::string& samplesPath) {
+    const char* schema = effective_schema(thread);
+    std::vector<std::string> files = collect_messages(samplesPath);
+    if (files.empty()) { fprintf(stderr, "Error: no .xml at '%s'\n", samplesPath.c_str()); return 1; }
+
+    std::vector<std::string> all_xmls, heavy_xmls, rest_xmls;
+    std::vector<std::string> heavy_names, rest_names;
+    for (const auto& f : files) {
+        std::vector<char> buf = read_file(f);
+        if (buf.empty()) { fprintf(stderr, "Error: unreadable %s\n", f.c_str()); return 1; }
+        std::string xml(buf.begin(), buf.end());
+        std::string name = fs::path(f).filename().string();
+        all_xmls.push_back(xml);
+        if (is_string_heavy(name)) { heavy_xmls.push_back(xml); heavy_names.push_back(name); }
+        else { rest_xmls.push_back(xml); rest_names.push_back(name); }
+    }
+
+    printf("\n  tuning matrix: %zu sample(s) (%zu string-heavy, %zu other), %zu config(s)\n\n",
+           all_xmls.size(), heavy_xmls.size(), rest_xmls.size(), kTuneConfigs.size());
+
+    std::vector<size_t> overall(kTuneConfigs.size()), heavy(kTuneConfigs.size()), rest(kTuneConfigs.size());
+    for (size_t ci = 0; ci < kTuneConfigs.size(); ++ci) {
+        const auto& cfg = kTuneConfigs[ci];
+        std::string doc = make_options_doc(cfg.byte_align, cfg.pre_compress, cfg.compression,
+                                            cfg.fragment, cfg.value_max_length, "");
+        exi_ctx ctx = nullptr;
+        if (exi_create_with_options(thread, schema, doc.data(), doc.size(), 0, &ctx) != EXI_OK)
+            die(thread, (std::string("exi_create_with_options failed for config '") + cfg.label + "'").c_str());
+        overall[ci] = tune_total(thread, ctx, cfg.batched, all_xmls, cfg.label);
+        heavy[ci] = tune_total(thread, ctx, cfg.batched, heavy_xmls, cfg.label);
+        rest[ci] = tune_total(thread, ctx, cfg.batched, rest_xmls, cfg.label);
+        exi_destroy(thread, ctx);
+    }
+
+    // Rank best-first (fewest total bytes); delta% is always vs config 1
+    // (bit-packed default), matching the brief regardless of rank position.
+    std::vector<size_t> order(kTuneConfigs.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return overall[a] < overall[b]; });
+    const size_t baseline = overall[0];
+
+    printf("  %-34s %12s %9s %9s\n", "config", "total bytes", "delta%", "batched?");
+    printf("  %s\n", std::string(68, '-').c_str());
+    for (size_t ci : order) {
+        double delta = baseline ? (double(overall[ci]) - double(baseline)) / double(baseline) * 100.0 : 0.0;
+        printf("  %-34s %12zu %8.1f%% %9s\n", kTuneConfigs[ci].label, overall[ci], delta,
+               kTuneConfigs[ci].batched ? "yes" : "no");
+    }
+
+    size_t heavy_winner = 0, rest_winner = 0;
+    for (size_t ci = 1; ci < kTuneConfigs.size(); ++ci) {
+        if (heavy[ci] < heavy[heavy_winner]) heavy_winner = ci;
+        if (rest[ci] < rest[rest_winner]) rest_winner = ci;
+    }
+    double heavy_delta = heavy[0] ? (double(heavy[heavy_winner]) - double(heavy[0])) / double(heavy[0]) * 100.0 : 0.0;
+    double rest_delta = rest[0] ? (double(rest[rest_winner]) - double(rest[0])) / double(rest[0]) * 100.0 : 0.0;
+    printf("\n  string-heavy class (filename has \"capab\"/\"heavy\", %zu sample(s)): winner = %s (%zu bytes, %.1f%% vs bit-packed)\n",
+           heavy_xmls.size(), kTuneConfigs[heavy_winner].label, heavy[heavy_winner], heavy_delta);
+    printf("  numeric/kinematic class (rest, %zu sample(s)): winner = %s (%zu bytes, %.1f%% vs bit-packed)\n\n",
+           rest_xmls.size(), kTuneConfigs[rest_winner].label, rest[rest_winner], rest_delta);
+
+    // Overall winner across ALL samples -> emit its options document, with
+    // the baked schema id attached as informational metadata (see
+    // include/exificient.h: an explicit exi_create*/exi_create_with_options
+    // schema path always wins over <schemaId> at runtime).
+    const size_t winner_idx = order.front();
+    const TuneConfig& winner = kTuneConfigs[winner_idx];
+    std::string tuned_doc = make_options_doc(winner.byte_align, winner.pre_compress, winner.compression,
+                                              winner.fragment, winner.value_max_length, "uci-2.5.0");
+    {
+        std::ofstream out("tuned-options.xml", std::ios::binary | std::ios::trunc);
+        if (!out) { fprintf(stderr, "Error: cannot write tuned-options.xml\n"); return 1; }
+        out << tuned_doc;
+    }
+    printf("  overall winner: %s -> wrote tuned-options.xml\n", winner.label);
+
+    // Prove it: read the emitted file back and build a context from it using
+    // the demo's explicit schema path (not effective_schema(), which would
+    // pass NULL on a baked build) - <schemaId> is informational only, so
+    // this must succeed regardless of whether the linked library is baked.
+    std::vector<char> emitted = read_file("tuned-options.xml");
+    if (emitted.empty()) { fprintf(stderr, "Error: failed to read back tuned-options.xml\n"); return 1; }
+    exi_ctx proof = nullptr;
+    if (exi_create_with_options(thread, g_schema, emitted.data(), emitted.size(), 0, &proof) != EXI_OK)
+        die(thread, "self-validation: exi_create_with_options(tuned-options.xml) failed");
+    exi_destroy(thread, proof);
+    printf("  self-validated: exi_create_with_options(tuned-options.xml, schema=%s) succeeded\n\n", g_schema);
+    return 0;
 }
 
 // ------------------------------------------------------------------ uuid ----
@@ -570,6 +765,8 @@ static void usage(const char* prog) {
            "Usage: %s <bench|peek|headers|errors|threads|create-cost> [options] [path]\n"
            "       %s options <options.xml> [samples-dir]  encode under a W3C EXI options\n"
            "                                                document; compare vs defaults\n"
+           "       %s tune [samples-dir]                   empirical options advisor: ranks a\n"
+           "                                                7-config matrix, writes tuned-options.xml\n"
            "       %s uuid <v3|v5> <namespace> <name...>\n\n"
            "Options:\n"
            "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"
@@ -581,7 +778,7 @@ static void usage(const char* prog) {
            "uuid: RFC 4122 name-based ids, no schema/exi_ctx needed. namespace is\n"
            "an alias (dns|url|oid|x500) or an explicit UUID; each name arg prints\n"
            "one line ('<name>  <uuid>'), or just the UUID if there is only one.\n",
-           prog, prog, prog, g_schema);
+           prog, prog, prog, prog, g_schema);
 }
 
 int main(int argc, char** argv) {
@@ -631,6 +828,10 @@ int main(int argc, char** argv) {
             std::string samplesPath = positional.size() > 1 ? positional[1] : "samples/";
             rc = run_options(thread, positional[0], samplesPath);
         }
+    }
+    else if (sub == "tune") {
+        std::string samplesPath = positional.empty() ? "samples/" : positional[0];
+        rc = run_tune(thread, samplesPath);
     }
     else { fprintf(stderr, "Error: unknown subcommand '%s'\n\n", sub.c_str()); usage(argv[0]); rc = 2; }
 

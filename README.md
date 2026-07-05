@@ -3,10 +3,11 @@
 A small C++ example that consumes the prebuilt
 [exificient](https://github.com/M4lwar/exificient-native-image) Conan package to
 schema-informed **EXI-compress** UCI XML messages. It's a capability showcase
-for the library's v2 C ABI: eight subcommands, each exercising a different part
+for the library's v2 C ABI: nine subcommands, each exercising a different part
 of the contract (compression + timing, type dispatch without a full decode,
 the `$EXI` cookie header, structured error reporting, shared-context thread
-safety, and encoding under a partner's W3C EXI options document).
+safety, encoding under a partner's W3C EXI options document, and an empirical
+options-tuning advisor).
 
 No JDK or GraalVM is needed — the library is consumed as a prebuilt Conan
 package.
@@ -121,6 +122,8 @@ exi-demo - capability showcase for libexificient (v2 C API)
 Usage: exi-demo <bench|peek|headers|errors|threads|create-cost> [options] [path]
        exi-demo options <options.xml> [samples-dir]  encode under a W3C EXI options
                                                 document; compare vs defaults
+       exi-demo tune [samples-dir]                   empirical options advisor: ranks a
+                                                7-config matrix, writes tuned-options.xml
        exi-demo uuid <v3|v5> <namespace> <name...>
 
 Options:
@@ -151,6 +154,7 @@ files (default: `samples/`).
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
 | `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
 | `options` | `exi_create_with_options` against a W3C EXI options document: per-sample size vs a plain context, plus `EXI_OPT_OPTIONS_IN_HEADER` header-interop | `exi-demo options docs/options/byte-aligned.xml samples/` |
+| `tune` | Ranks a 7-config options matrix against `samples/`, notes the winner per message class, and writes a self-validated `tuned-options.xml` | `exi-demo tune samples/` |
 | `uuid` | RFC 4122 v3/v5 name-based ids — no schema or `exi_ctx` needed | `exi-demo uuid v5 dns www.example.com` |
 
 ### Samples
@@ -353,6 +357,53 @@ are wrapped in a `<batch>` envelope per the library's fragment convention,
 detected by a `<fragment` substring match on the document). Any other
 partner's W3C EXI options document works the same way; nothing here is
 specific to these three.
+
+#### `tune`
+
+```
+$ ./build/Release/exi-demo tune samples/
+
+  tuning matrix: 10 sample(s) (4 string-heavy, 6 other), 7 config(s)
+
+  config                              total bytes    delta%  batched?
+  --------------------------------------------------------------------
+  fragment batch + compression               2219    -32.6%       yes
+  fragment batch (bit-packed)                2945    -10.6%       yes
+  compression                                3239     -1.6%        no
+  compression + valueMaxLength 64            3239     -1.6%        no
+  bit-packed (default)                       3293      0.0%        no
+  byte-aligned                               5419     64.6%        no
+  pre-compression                            5419     64.6%        no
+
+  string-heavy class (filename has "capab"/"heavy", 4 sample(s)): winner = fragment batch + compression (1631 bytes, -35.5% vs bit-packed)
+  numeric/kinematic class (rest, 6 sample(s)): winner = fragment batch + compression (753 bytes, -1.7% vs bit-packed)
+
+  overall winner: fragment batch + compression -> wrote tuned-options.xml
+  self-validated: exi_create_with_options(tuned-options.xml, schema=./schemas/UCI_MessageDefinitions_v2_5_0.xsd) succeeded
+```
+
+`tune` builds a 7-entry options-document matrix in code (bit-packed default,
+byte-aligned, pre-compression, compression alone, a batched fragment
+encode, batched fragment + compression, and a compression + capped
+`valueMaxLength` sweep), then measures each against every sample under
+`samples/`: single-config entries encode each sample separately and sum the
+bytes; batched entries wrap every sample in one discarded `<batch>` envelope
+(the same fragment convention used by [`options`](#options) above) and
+encode it once, so cross-message string-table reuse is included in the
+total. The four string/UUID-dense samples (`flight-capability*.xml`,
+`nav-heavy.xml`, `posdet-heavy.xml` — filename matches `capab` or `heavy`)
+are broken out from the six smaller, numeric/kinematic-typed samples so each
+class gets its own winner: batched fragment + compression wins the
+string-heavy class by a wide margin (repeated enum tokens and reused
+capability UUIDs compress far better once they share one string table),
+while the numeric-typed class barely moves regardless of options, since
+there's little repeated text for compression or fragment batching to
+exploit. `tune` finishes by writing the overall winner's options document to
+`tuned-options.xml` (with a `<schemaId>uci-2.5.0</schemaId>` hint attached)
+and proving the emitted file actually works — it reads the file back and
+calls `exi_create_with_options` against it with the demo's own schema path,
+exiting nonzero on failure. Hand that file to a partner alongside the
+schema and they get the same tuned encoding without re-deriving it.
 
 #### `uuid` — RFC 4122 v3/v5 ids
 
