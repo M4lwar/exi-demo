@@ -11,7 +11,7 @@ thread safety).
 No JDK or GraalVM is needed — the library is consumed as a prebuilt Conan
 package.
 
-> **v2 API note:** this demo targets `exificient >= 1.0.0` (the v2 C ABI —
+> **v2 API note:** this demo targets `exificient >= 1.0.1` (the v2 C ABI —
 > explicit `exi_ctx` contexts via `exi_create`/`exi_destroy`, not the old
 > singleton `exi_init`). The earlier `exi_init`-based, single-command demo
 > lives in this repo's git history prior to the `feat!: migrate to
@@ -33,14 +33,14 @@ The library is published as a prebuilt Conan package attached to the
 [exificient-native-image releases](https://github.com/M4lwar/exificient-native-image/releases).
 Download the archive for your platform:
 
-- `conan-exificient-1.0.0-linux-x86_64.tgz`
-- `conan-exificient-1.0.0-linux-arm64.tgz`
-- `conan-exificient-1.0.0-windows-x86_64.tgz`
+- `conan-exificient-1.0.1-linux-x86_64.tgz`
+- `conan-exificient-1.0.1-linux-arm64.tgz`
+- `conan-exificient-1.0.1-windows-x86_64.tgz`
 
 ## 2. Restore it into the local Conan cache
 
 ```sh
-conan cache restore conan-exificient-1.0.0-<os>-<arch>.tgz
+conan cache restore conan-exificient-1.0.1-<os>-<arch>.tgz
 ```
 
 ## 3. Build
@@ -67,7 +67,7 @@ at `/w`, and caches the Conan cache and apt/pip installs in named volumes
 across invocations:
 
 ```sh
-./bctl 'conan cache restore conan-exificient-1.0.0-linux-arm64.tgz && \
+./bctl 'conan cache restore conan-exificient-1.0.1-linux-arm64.tgz && \
   conan install . && \
   cmake -S . -B build/Release \
         -DCMAKE_TOOLCHAIN_FILE="$PWD/build/Release/generators/conan_toolchain.cmake" \
@@ -170,7 +170,7 @@ not random v4): a fixed namespace UUID derived once via
 in `samples/` reproducible from its name rather than randomly generated, and
 lets the same logical entity share one UUID across multiple sample files.
 
-Output below is from an actual run against the released `exificient/1.0.0`
+Output below is from an actual run against the released `exificient/1.0.1`
 package (linux-arm64, containerized via `./bctl`).
 
 #### `bench`
@@ -317,9 +317,9 @@ into the native image, selected with the `baked_schema` Conan option:
 conan install . -o "exificient/*:baked_schema=uci-2.5.0"
 ```
 
-This resolves to a separate package_id under the same `exificient/1.0.0`
+This resolves to a separate package_id under the same `exificient/1.0.1`
 recipe/version — restoring a baked `.tgz` into the Conan cache adds it
-alongside any generic package already there; `conan list "exificient/1.0.0:*"`
+alongside any generic package already there; `conan list "exificient/1.0.1:*"`
 shows both.
 
 When the linked library reports a baked schema, every `exi-demo` subcommand
@@ -330,9 +330,9 @@ from seconds (parsing and building grammars from the `.xsd` at runtime) to
 effectively free (the grammars are already compiled in).
 
 This only applies to the Linux legs of CI, which restore
-`conan-exificient-1.0.0+uci-2.5.0-linux-{x86_64,arm64}.tgz` from the
+`conan-exificient-1.0.1+uci-2.5.0-linux-{x86_64,arm64}.tgz` from the
 [exi-bake-template](https://github.com/M4lwar/exi-bake-template) releases.
-The Windows leg stays on the generic `exificient/1.0.0` package — no baked
+The Windows leg stays on the generic `exificient/1.0.1` package — no baked
 Windows artifact is published — so `create-cost` there only ever exercises
 the runtime-load path.
 

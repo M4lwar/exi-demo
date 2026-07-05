@@ -28,7 +28,7 @@ class ExiDemoConan(ConanFile):
     generators = "CMakeToolchain", "CMakeDeps"
 
     def requirements(self):
-        self.requires("exificient/1.0.0")
+        self.requires("exificient/1.0.1")
 
     def layout(self):
         cmake_layout(self)
