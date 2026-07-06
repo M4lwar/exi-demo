@@ -52,9 +52,11 @@ jobs:
           ./build/Release/exi-demo threads -t 4 -n 100
           ./build/Release/exi-demo options docs/options/byte-aligned.xml samples/
           ./build/Release/exi-demo options docs/options/compression-fragment.xml samples/
+          ./build/Release/exi-demo options docs/options/partner-interop.xml samples/
           ./build/Release/exi-demo tune samples/
           test "$(./build/Release/exi-demo uuid v5 dns www.example.com)" = "2ed6657d-e927-568b-95e1-2665a8aea6a2"
           test "$(./build/Release/exi-demo uuid v3 dns www.example.com)" = "5df41881-3aed-3515-88a7-2f4a814cf09e"
+          test "$(./build/Release/exi-demo uuid v5 dns exi-demo.example.com)" = "3dd65e4d-9f1b-58dc-b5c1-5aa11c55bdbc"
 
   windows:
     name: build-windows-x86_64
@@ -93,8 +95,11 @@ jobs:
           build\Release\exi-demo.exe threads -t 4 -n 100 || exit /b 1
           build\Release\exi-demo.exe options docs\options\byte-aligned.xml samples\ || exit /b 1
           build\Release\exi-demo.exe options docs\options\compression-fragment.xml samples\ || exit /b 1
+          build\Release\exi-demo.exe options docs\options\partner-interop.xml samples\ || exit /b 1
           build\Release\exi-demo.exe tune samples\ || exit /b 1
           for /f "delims=" %%u in ('build\Release\exi-demo.exe uuid v5 dns www.example.com') do set UUID_V5=%%u
           if not "%UUID_V5%"=="2ed6657d-e927-568b-95e1-2665a8aea6a2" exit /b 1
           for /f "delims=" %%u in ('build\Release\exi-demo.exe uuid v3 dns www.example.com') do set UUID_V3=%%u
           if not "%UUID_V3%"=="5df41881-3aed-3515-88a7-2f4a814cf09e" exit /b 1
+          for /f "delims=" %%u in ('build\Release\exi-demo.exe uuid v5 dns exi-demo.example.com') do set UUID_V5B=%%u
+          if not "%UUID_V5B%"=="3dd65e4d-9f1b-58dc-b5c1-5aa11c55bdbc" exit /b 1

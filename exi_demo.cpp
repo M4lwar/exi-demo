@@ -9,7 +9,7 @@
 //   exi-demo options <options.xml> [samples-dir]          encode under a W3C EXI options
 //                                                          document; compare vs defaults
 //   exi-demo tune [samples-dir]                           empirical options advisor: ranks a
-//                                                          7-config matrix, writes tuned-options.xml
+//                                                          8-config matrix, writes tuned-options.xml
 //   exi-demo uuid <v3|v5> <namespace> <name...>           RFC 4122 name-based ids (no schema)
 //
 // path: an .xml file or a directory searched recursively (default: samples/).
@@ -416,6 +416,57 @@ static std::string wrap_batch_all(const std::vector<std::string>& xmls) {
     return "<batch>" + inner + "</batch>";
 }
 
+// Returns the text content of the first "<tag>...</tag>" found in `doc`, or
+// "" if the tag isn't present. Substring-based, like wants_fragment() above -
+// good enough for echoing a document's own leaf values back to a human, not
+// a substitute for real XML parsing/validation.
+static std::string extract_tag_value(const std::string& doc, const char* tag) {
+    const std::string open = std::string("<") + tag + ">";
+    size_t start = doc.find(open);
+    if (start == std::string::npos) return "";
+    start += open.size();
+    size_t end = doc.find("</", start);
+    if (end == std::string::npos) return "";
+    return doc.substr(start, end - start);
+}
+
+// Echoes which W3C EXI options knobs a document turns on, one line per
+// present knob (see EXI_Options.xsd for the full element vocabulary this
+// probes: alignment byte/pre-compress, selfContained, valueMaxLength,
+// valuePartitionCapacity, preserve.*, blockSize, compression, fragment,
+// schemaId, strict). No parsing - a handful of substring probes, same spirit
+// as wants_fragment()/strip_xml_decl() above; not a replacement for
+// exi_create_with_options's real validation of the document.
+static void print_effective_config(const std::string& doc) {
+    printf("  effective configuration:\n");
+    bool any = false;
+    auto line = [&](const std::string& s) { printf("    %s\n", s.c_str()); any = true; };
+
+    if (doc.find("<byte/>") != std::string::npos) line("alignment: byte");
+    else if (doc.find("<pre-compress/>") != std::string::npos) line("alignment: pre-compress");
+    if (doc.find("<selfContained/>") != std::string::npos) line("selfContained");
+
+    std::string v;
+    if (!(v = extract_tag_value(doc, "valueMaxLength")).empty()) line("valueMaxLength: " + v);
+    if (!(v = extract_tag_value(doc, "valuePartitionCapacity")).empty()) line("valuePartitionCapacity: " + v);
+
+    if (doc.find("<dtd/>") != std::string::npos) line("preserve.dtd");
+    if (doc.find("<prefixes/>") != std::string::npos) line("preserve.prefixes");
+    if (doc.find("<lexicalValues/>") != std::string::npos) line("preserve.lexicalValues");
+    if (doc.find("<comments/>") != std::string::npos) line("preserve.comments");
+    if (doc.find("<pis/>") != std::string::npos) line("preserve.pis");
+
+    if (!(v = extract_tag_value(doc, "blockSize")).empty()) line("blockSize: " + v);
+
+    if (doc.find("<compression/>") != std::string::npos) line("compression");
+    if (wants_fragment(doc)) line("fragment");
+    if (!(v = extract_tag_value(doc, "schemaId")).empty()) line("schemaId: " + v);
+
+    if (doc.find("<strict/>") != std::string::npos) line("strict");
+
+    if (!any) printf("    (none - bit-packed default)\n");
+}
+
 // Encodes each sample under both a plain context and one built from a W3C
 // EXI options document, then demonstrates header-options interop: a stream
 // encoded with EXI_OPT_OPTIONS_IN_HEADER carries its own coding options, so
@@ -445,7 +496,8 @@ static int run_options(graal_isolatethread_t* thread, const std::string& options
 
     printf("\n  options document: %s%s\n", optionsPath.c_str(),
            fragment ? "  (fragment: samples wrapped in a discarded <batch> envelope)" : "");
-    printf("  %-38s %11s %11s %9s\n", "sample", "plain-bytes", "doc-bytes", "delta%");
+    print_effective_config(options_doc);
+    printf("\n  %-38s %11s %11s %9s\n", "sample", "plain-bytes", "doc-bytes", "delta%");
     printf("  %s\n", std::string(74, '-').c_str());
 
     std::string first_input;   // the exact bytes handed to ctxA for the first sample
@@ -505,17 +557,23 @@ static int run_options(graal_isolatethread_t* thread, const std::string& options
 
 // Assembles a W3C EXI options <header> document (see EXI_Options.xsd) from a
 // handful of booleans, respecting the schema's element sequence:
-// lesscommon/uncommon (alignment, valueMaxLength), then common (compression,
-// fragment, schemaId), then strict (unused here). schema_id is empty for the
-// benchmarking passes and set to the baked id only when emitting the final
-// tuned document.
+// lesscommon/uncommon (alignment, valueMaxLength, valuePartitionCapacity),
+// then common (compression, fragment, schemaId), then strict (unused here).
+// schema_id is empty for the benchmarking passes; when emitting the final
+// tuned document it's set to the demo's known baked id ("uci-2.5.0", a
+// literal here - not read via exi_baked_schema), stamped purely as
+// informational metadata per the ABI, since an explicit schema path always
+// wins over <schemaId> at runtime.
 static std::string make_options_doc(bool byte_align, bool pre_compress, bool compression,
                                      bool fragment, int value_max_length,
+                                     int value_partition_capacity,
                                      const std::string& schema_id) {
     std::string uncommon;
     if (byte_align) uncommon += "<alignment><byte/></alignment>";
     else if (pre_compress) uncommon += "<alignment><pre-compress/></alignment>";
     if (value_max_length > 0) uncommon += "<valueMaxLength>" + std::to_string(value_max_length) + "</valueMaxLength>";
+    if (value_partition_capacity > 0)
+        uncommon += "<valuePartitionCapacity>" + std::to_string(value_partition_capacity) + "</valuePartitionCapacity>";
     std::string lesscommon = uncommon.empty() ? "" : "<lesscommon><uncommon>" + uncommon + "</uncommon></lesscommon>";
 
     std::string common_body;
@@ -534,20 +592,22 @@ struct TuneConfig {
     bool compression;
     bool fragment;
     int value_max_length;
+    int value_partition_capacity;
     bool batched;
 };
 
-// The 7-config empirical matrix from the tuning brief: one bit-packed
+// The 8-config empirical matrix from the tuning brief: one bit-packed
 // baseline, three single-knob variants, two batched-fragment variants, and
-// one representative multi-knob sweep entry.
+// two representative multi-knob sweep entries.
 static const std::vector<TuneConfig> kTuneConfigs = {
-    {"bit-packed (default)",            false, false, false, false, 0,  false},
-    {"byte-aligned",                    true,  false, false, false, 0,  false},
-    {"pre-compression",                 false, true,  false, false, 0,  false},
-    {"compression",                     false, false, true,  false, 0,  false},
-    {"fragment batch (bit-packed)",     false, false, false, true,  0,  true},
-    {"fragment batch + compression",    false, false, true,  true,  0,  true},
-    {"compression + valueMaxLength 64", false, false, true,  false, 64, false},
+    {"bit-packed (default)",                        false, false, false, false, 0,  0,   false},
+    {"byte-aligned",                                true,  false, false, false, 0,  0,   false},
+    {"pre-compression",                             false, true,  false, false, 0,  0,   false},
+    {"compression",                                 false, false, true,  false, 0,  0,   false},
+    {"fragment batch (bit-packed)",                 false, false, false, true,  0,  0,   true},
+    {"fragment batch + compression",                false, false, true,  true,  0,  0,   true},
+    {"compression + valueMaxLength 64",             false, false, true,  false, 64, 0,   false},
+    {"compression + valuePartitionCapacity 100",    false, false, true,  false, 0,  100, false},
 };
 
 // Encodes `xmls` under `ctx` per the config's methodology: batched configs
@@ -584,7 +644,7 @@ static bool is_string_heavy(const std::string& filename) {
     return filename.find("capab") != std::string::npos || filename.find("heavy") != std::string::npos;
 }
 
-// Empirically ranks the 7-config options matrix against every sample, then
+// Empirically ranks the 8-config options matrix against every sample, then
 // notes which config wins per message class, and finally writes + proves the
 // overall winner's options document as tuned-options.xml.
 static int run_tune(graal_isolatethread_t* thread, const std::string& samplesPath) {
@@ -611,7 +671,8 @@ static int run_tune(graal_isolatethread_t* thread, const std::string& samplesPat
     for (size_t ci = 0; ci < kTuneConfigs.size(); ++ci) {
         const auto& cfg = kTuneConfigs[ci];
         std::string doc = make_options_doc(cfg.byte_align, cfg.pre_compress, cfg.compression,
-                                            cfg.fragment, cfg.value_max_length, "");
+                                            cfg.fragment, cfg.value_max_length,
+                                            cfg.value_partition_capacity, "");
         exi_ctx ctx = nullptr;
         if (exi_create_with_options(thread, schema, doc.data(), doc.size(), 0, &ctx) != EXI_OK)
             die(thread, (std::string("exi_create_with_options failed for config '") + cfg.label + "'").c_str());
@@ -628,11 +689,11 @@ static int run_tune(graal_isolatethread_t* thread, const std::string& samplesPat
     std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return overall[a] < overall[b]; });
     const size_t baseline = overall[0];
 
-    printf("  %-34s %12s %9s %9s\n", "config", "total bytes", "delta%", "batched?");
-    printf("  %s\n", std::string(68, '-').c_str());
+    printf("  %-42s %12s %9s %9s\n", "config", "total bytes", "delta%", "batched?");
+    printf("  %s\n", std::string(76, '-').c_str());
     for (size_t ci : order) {
         double delta = baseline ? (double(overall[ci]) - double(baseline)) / double(baseline) * 100.0 : 0.0;
-        printf("  %-34s %12zu %8.1f%% %9s\n", kTuneConfigs[ci].label, overall[ci], delta,
+        printf("  %-42s %12zu %8.1f%% %9s\n", kTuneConfigs[ci].label, overall[ci], delta,
                kTuneConfigs[ci].batched ? "yes" : "no");
     }
 
@@ -648,14 +709,16 @@ static int run_tune(graal_isolatethread_t* thread, const std::string& samplesPat
     printf("  numeric/kinematic class (rest, %zu sample(s)): winner = %s (%zu bytes, %.1f%% vs bit-packed)\n\n",
            rest_xmls.size(), kTuneConfigs[rest_winner].label, rest[rest_winner], rest_delta);
 
-    // Overall winner across ALL samples -> emit its options document, with
-    // the baked schema id attached as informational metadata (see
+    // Overall winner across ALL samples -> emit its options document,
+    // stamping the demo's known baked id ("uci-2.5.0", a literal here - not
+    // read via exi_baked_schema) as informational metadata (see
     // include/exificient.h: an explicit exi_create*/exi_create_with_options
     // schema path always wins over <schemaId> at runtime).
     const size_t winner_idx = order.front();
     const TuneConfig& winner = kTuneConfigs[winner_idx];
     std::string tuned_doc = make_options_doc(winner.byte_align, winner.pre_compress, winner.compression,
-                                              winner.fragment, winner.value_max_length, "uci-2.5.0");
+                                              winner.fragment, winner.value_max_length,
+                                              winner.value_partition_capacity, "uci-2.5.0");
     {
         std::ofstream out("tuned-options.xml", std::ios::binary | std::ios::trunc);
         if (!out) { fprintf(stderr, "Error: cannot write tuned-options.xml\n"); return 1; }
@@ -766,7 +829,7 @@ static void usage(const char* prog) {
            "       %s options <options.xml> [samples-dir]  encode under a W3C EXI options\n"
            "                                                document; compare vs defaults\n"
            "       %s tune [samples-dir]                   empirical options advisor: ranks a\n"
-           "                                                7-config matrix, writes tuned-options.xml\n"
+           "                                                8-config matrix, writes tuned-options.xml\n"
            "       %s uuid <v3|v5> <namespace> <name...>\n\n"
            "Options:\n"
            "  -s, --schema <path>    XSD passed to exi_create (default: %s)\n"

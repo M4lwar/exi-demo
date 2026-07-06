@@ -6,8 +6,10 @@ schema-informed **EXI-compress** UCI XML messages. It's a capability showcase
 for the library's v2 C ABI: nine subcommands, each exercising a different part
 of the contract (compression + timing, type dispatch without a full decode,
 the `$EXI` cookie header, structured error reporting, shared-context thread
-safety, encoding under a partner's W3C EXI options document, and an empirical
-options-tuning advisor).
+safety, baked-vs-runtime context creation cost, encoding under a partner's
+W3C EXI options document, an empirical options-tuning advisor, and — as a
+pure utility making no library calls at all — RFC 4122 name-based UUID
+generation).
 
 No JDK or GraalVM is needed — the library is consumed as a prebuilt Conan
 package.
@@ -123,7 +125,7 @@ Usage: exi-demo <bench|peek|headers|errors|threads|create-cost> [options] [path]
        exi-demo options <options.xml> [samples-dir]  encode under a W3C EXI options
                                                 document; compare vs defaults
        exi-demo tune [samples-dir]                   empirical options advisor: ranks a
-                                                7-config matrix, writes tuned-options.xml
+                                                8-config matrix, writes tuned-options.xml
        exi-demo uuid <v3|v5> <namespace> <name...>
 
 Options:
@@ -154,7 +156,7 @@ files (default: `samples/`).
 | `threads` | One shared `exi_ctx`, N worker threads each `graal_attach_thread`, concurrent `exi_encode` calls compared byte-for-byte against a reference | `exi-demo threads -t 4 -n 100` |
 | `create-cost` | `exi_create(NULL)` against a baked context vs a full runtime XSD load of the same schema — why baking exists | `exi-demo create-cost` |
 | `options` | `exi_create_with_options` against a W3C EXI options document: per-sample size vs a plain context, plus `EXI_OPT_OPTIONS_IN_HEADER` header-interop | `exi-demo options docs/options/byte-aligned.xml samples/` |
-| `tune` | Ranks a 7-config options matrix against `samples/`, notes the winner per message class, and writes a self-validated `tuned-options.xml` | `exi-demo tune samples/` |
+| `tune` | Ranks an 8-config options matrix against `samples/`, notes the winner per message class, and writes a self-validated `tuned-options.xml` | `exi-demo tune samples/` |
 | `uuid` | RFC 4122 v3/v5 name-based ids — no schema or `exi_ctx` needed | `exi-demo uuid v5 dns www.example.com` |
 
 ### Samples
@@ -192,7 +194,7 @@ package (linux-arm64, containerized via `./bctl`).
 $ ./build/Release/exi-demo bench samples/
 
   Schema     : ./schemas/UCI_MessageDefinitions_v2_5_0.xsd
-  exi_create : 8761.389 ms  (one-time: schema load + grammar build)
+  exi_create : 9482.817 ms  (one-time: schema load + grammar build)
 
   message                                        XML       EXI    saved
   ---------------------------------------------------------------------
@@ -228,23 +230,24 @@ $ ./build/Release/exi-demo peek samples/
 
   message                                  peeked type                       peek ms    decode ms
   ------------------------------------------------------------------------------------------------
-  entity.xml                               Entity                              0.006        0.162
-  flight-capability-status.xml             FlightCapabilityStatus              0.003        0.161
-  flight-capability.xml                    FlightCapability                    0.002        0.144
-  nav-heavy.xml                            NavigationReport                    0.004        0.123
-  navigation-report.xml                    NavigationReport                    0.003        0.100
-  posdet-heavy.xml                         PositionReportDetailed              0.003        0.119
-  position-report-detailed.xml             PositionReportDetailed              0.002        0.085
-  position-report.xml                      PositionReport                      0.002        0.078
-  task-command.xml                         TaskCommand                         0.002        0.089
-  task.xml                                 Task                                0.002        0.077
+  entity.xml                               Entity                              0.258        0.292
+  flight-capability-status.xml             FlightCapabilityStatus              0.003        0.398
+  flight-capability.xml                    FlightCapability                    0.003        0.150
+  nav-heavy.xml                            NavigationReport                    0.011        0.216
+  navigation-report.xml                    NavigationReport                    0.003        0.124
+  posdet-heavy.xml                         PositionReportDetailed              0.004        0.178
+  position-report-detailed.xml             PositionReportDetailed              0.002        0.113
+  position-report.xml                      PositionReport                      0.008        0.187
+  task-command.xml                         TaskCommand                         0.007        0.154
+  task.xml                                 Task                                0.008        0.149
 
   peek reads only the stream head — cost is independent of message size.
 ```
 
-`exi_peek_root` was 20x-60x faster than a full decode across this sample
-set — useful for routing a message by type before deciding whether (and how)
-to decode it. `flight-capability.xml`/`flight-capability-status.xml` peek as
+`exi_peek_root` was 18x-133x faster than a full decode across this sample
+set (the first row is the exception — the very first peek call absorbs a
+one-time warm-up cost) — useful for routing a message by type before
+deciding whether (and how) to decode it. `flight-capability.xml`/`flight-capability-status.xml` peek as
 `FlightCapability`/`FlightCapabilityStatus`; `nav-heavy.xml` and
 `posdet-heavy.xml` are the same underlying `NavigationReport` /
 `PositionReportDetailed` message types as their smaller counterparts, just
@@ -274,9 +277,9 @@ can still decode a cookie-prefixed stream.
 $ ./build/Release/exi-demo errors
 
   create(missing schema xsd)             -> EXI_ERR_SCHEMA_LOAD        EXIException - XML Schema document (no/such/schema.xsd) not found.: NullPointerException
-  create(unknown flag bit 5)             -> EXI_ERR_INVALID_ARG        IllegalArgumentException - unknown flag bits: 0x20
+  create(unknown flag bit 15)            -> EXI_ERR_INVALID_ARG        IllegalArgumentException - unknown flag bits: 0x8000
   encode("this is not xml")              -> EXI_ERR_MALFORMED_XML      SAXParseException - Content is not allowed in prolog.
-  decode(garbage bytes)                  -> EXI_ERR_MALFORMED_EXI      TransformerException - org.xml.sax.SAXException: EXI No valid EXI document according distinguishing bits
+  decode(garbage bytes)                  -> EXI_ERR_MALFORMED_EXI      TransformerException - org.xml.sax.SAXException: EXI No valid EXI document according distinguishing bits com.siemens.ct.exi.core.exceptions.EXIException: No valid EXI document according distinguishing bits: SAXException - EXI No valid EXI document accordi
   peek(name_cap=3) [needs 15]            -> EXI_ERR_BUFFER_TOO_SMALL   name buffer too small: need 15 bytes
   decode(NULL ctx)                       -> EXI_ERR_INVALID_CONTEXT    ctx is not a live context
   encode(destroyed ctx)                  -> EXI_ERR_INVALID_CONTEXT    ctx is not a live context
@@ -295,7 +298,7 @@ $ ./build/Release/exi-demo threads -t 4 -n 100
 
   4 thread(s) x 100 iterations on ONE shared exi_ctx
   encodes:    400 ok, 0 failed, 0 byte-mismatches
-  throughput: 7359 encodes/s (0.054 s total)
+  throughput: 7925 encodes/s (0.050 s total)
 ```
 
 An `exi_ctx` is immutable after creation and safe to call concurrently from
@@ -312,8 +315,8 @@ $ ./build/Release/exi-demo create-cost
 
   library baked schema: uci-2.5.0
 
-  exi_create(NULL)  [baked uci-2.5.0]   :    0.012 ms  (avg of 5)
-  exi_create("./schemas/UCI_MessageDefinitions_v2_5_0.xsd") :  10182.8 ms  (runtime XSD load)
+  exi_create(NULL)  [baked uci-2.5.0]   :    0.079 ms  (avg of 5)
+  exi_create("./schemas/UCI_MessageDefinitions_v2_5_0.xsd") :   9269.7 ms  (runtime XSD load)
 
   baking makes context creation effectively free.
 ```
@@ -327,6 +330,9 @@ runtime-load line — there's nothing baked to compare against.
 $ ./build/Release/exi-demo options docs/options/byte-aligned.xml samples/
 
   options document: docs/options/byte-aligned.xml
+  effective configuration:
+    alignment: byte
+
   sample                                 plain-bytes   doc-bytes    delta%
   --------------------------------------------------------------------------
   entity.xml                                     207         445    115.0%
@@ -338,7 +344,10 @@ $ ./build/Release/exi-demo options docs/options/byte-aligned.xml samples/
   header-interop: plain context decoded foreign stream OK (root Entity)
 ```
 
-The `doc-bytes` column comes from a context built with
+The `effective configuration` lines echo the document's recognized option
+elements back, one line per knob present (no XML parsing — a substring scan
+for the known element names), so the settings in play are visible without
+opening the document. The `doc-bytes` column comes from a context built with
 `exi_create_with_options` from the given W3C EXI options document (spec
 §5.4 `<header>`); `plain-bytes` is the same message under a default
 `exi_create` context, so the delta shows exactly what that document's
@@ -363,17 +372,18 @@ specific to these three.
 ```
 $ ./build/Release/exi-demo tune samples/
 
-  tuning matrix: 10 sample(s) (4 string-heavy, 6 other), 7 config(s)
+  tuning matrix: 10 sample(s) (4 string-heavy, 6 other), 8 config(s)
 
-  config                              total bytes    delta%  batched?
-  --------------------------------------------------------------------
-  fragment batch + compression               2219    -32.6%       yes
-  fragment batch (bit-packed)                2945    -10.6%       yes
-  compression                                3239     -1.6%        no
-  compression + valueMaxLength 64            3239     -1.6%        no
-  bit-packed (default)                       3293      0.0%        no
-  byte-aligned                               5419     64.6%        no
-  pre-compression                            5419     64.6%        no
+  config                                      total bytes    delta%  batched?
+  ----------------------------------------------------------------------------
+  fragment batch + compression                       2219    -32.6%       yes
+  fragment batch (bit-packed)                        2945    -10.6%       yes
+  compression                                        3239     -1.6%        no
+  compression + valueMaxLength 64                    3239     -1.6%        no
+  compression + valuePartitionCapacity 100           3239     -1.6%        no
+  bit-packed (default)                               3293      0.0%        no
+  byte-aligned                                       5419     64.6%        no
+  pre-compression                                    5419     64.6%        no
 
   string-heavy class (filename has "capab"/"heavy", 4 sample(s)): winner = fragment batch + compression (1631 bytes, -35.5% vs bit-packed)
   numeric/kinematic class (rest, 6 sample(s)): winner = fragment batch + compression (753 bytes, -1.7% vs bit-packed)
@@ -382,10 +392,11 @@ $ ./build/Release/exi-demo tune samples/
   self-validated: exi_create_with_options(tuned-options.xml, schema=./schemas/UCI_MessageDefinitions_v2_5_0.xsd) succeeded
 ```
 
-`tune` builds a 7-entry options-document matrix in code (bit-packed default,
+`tune` builds an 8-entry options-document matrix in code (bit-packed default,
 byte-aligned, pre-compression, compression alone, a batched fragment
-encode, batched fragment + compression, and a compression + capped
-`valueMaxLength` sweep), then measures each against every sample under
+encode, batched fragment + compression, a compression + capped
+`valueMaxLength` sweep, and a compression + capped
+`valuePartitionCapacity` sweep), then measures each against every sample under
 `samples/`: single-config entries encode each sample separately and sum the
 bytes; batched entries wrap every sample in one discarded `<batch>` envelope
 (the same fragment convention used by [`options`](#options) above) and
