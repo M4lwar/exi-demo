@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  EXIFICIENT_VERSION: "1.0.1"
+  EXIFICIENT_VERSION: "1.0.2"
 
 jobs:
   linux:
@@ -31,7 +31,7 @@ jobs:
       - name: Restore baked uci-2.5.0 exificient package
         run: |
           curl -fsSL -o exi-baked.tgz \
-            "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.1-uci-2.5.0/conan-exificient-1.0.1+uci-2.5.0-linux-${{ matrix.arch }}.tgz"
+            "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.2-uci-2.5.0/conan-exificient-1.0.2+uci-2.5.0-linux-${{ matrix.arch }}.tgz"
           conan profile detect --force
           conan cache restore exi-baked.tgz
       - name: Build
@@ -71,7 +71,7 @@ jobs:
       - name: Restore baked uci-2.5.0 exificient package
         shell: pwsh
         run: |
-          Invoke-WebRequest "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.1-uci-2.5.0/conan-exificient-1.0.1+uci-2.5.0-windows-x86_64.tgz" -OutFile exi.tgz
+          Invoke-WebRequest "https://github.com/M4lwar/exi-bake-template/releases/download/v1.0.2-uci-2.5.0/conan-exificient-1.0.2+uci-2.5.0-windows-x86_64.tgz" -OutFile exi.tgz
           conan profile detect --force
           conan cache restore exi.tgz
       - name: Build
